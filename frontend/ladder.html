@@ -1,0 +1,49 @@
+<div class="bt-root ld">
+  <section class="ld-stage" data-el="stage">
+    <header class="bt-top ld-top">
+      <div class="bt-kv"><span>보유 칩</span><b data-el="balance">0</b></div>
+      <div class="bt-kv"><span>손익</span><b data-el="profit">0</b></div>
+      <div class="bt-kv right"><span>이번 회차 베팅</span><b data-el="totalbet">0</b></div>
+    </header>
+    <div class="ld-recent" data-el="recent"></div>
+
+    <div class="ld-body">
+      <div class="ld-clock">
+        <svg viewBox="0 0 100 100" class="ld-ring">
+          <circle cx="50" cy="50" r="44" class="track"></circle>
+          <circle cx="50" cy="50" r="44" class="bar" data-el="ring"></circle>
+        </svg>
+        <div class="ld-clock-text">
+          <b data-el="round">-</b>
+          <span data-el="count">--</span>
+          <small data-el="phase"></small>
+        </div>
+      </div>
+      <canvas class="ld-canvas" data-el="canvas"></canvas>
+      <div class="ld-side">
+        <div class="ld-result" data-el="result"></div>
+        <div class="ld-stats" data-el="stats"></div>
+      </div>
+    </div>
+    <div class="ld-fair" data-el="fair"></div>
+  </section>
+
+  <section class="bt-controls ld-controls">
+    <div class="ld-bets" data-el="bets"></div>
+    <div class="ld-bottom">
+      <div class="bt-chiptray" data-el="chiptray"></div>
+      <div class="bt-actions">
+        <button data-act="undo">되돌리기 <kbd>Z</kbd></button>
+        <button data-act="clear">전부 취소 <kbd>C</kbd></button>
+        <button data-act="rebet">재베팅 <kbd>R</kbd></button>
+        <button data-act="confirm" class="ld-confirm">베팅 확정 <kbd>Space</kbd></button>
+      </div>
+    </div>
+  </section>
+
+  <section class="ld-board">
+    <div class="ld-board-title">홀·짝 흐름 (최근 120회차) <span>● 홀 &nbsp; ● 짝</span></div>
+    <div class="ld-road" data-el="road"></div>
+  </section>
+  <div class="bt-toast" data-el="toast"></div>
+</div>

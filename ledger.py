@@ -6,6 +6,7 @@
 - 바카라: "result" (engine.rules.RoundResult.to_dict)
 - 블랙잭: "dealer", "seats" (bj.game.BJTable.round_record)
 - 비행기: "crash", "cashouts", "fair" (crash.game.CrashTable.round_record)
+- 사다리: "result", "code", "fair" (ladder.game.LadderTable._settle)
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from engine.bets import BET_LABELS, Bet
 
 SUIT_SYMBOL = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
 WINNER_TEXT = {"P": "플레이어", "B": "뱅커", "T": "타이"}
-GAME_TEXT = {"baccarat": "바카라", "blackjack": "블랙잭", "crash": "비행기"}
+GAME_TEXT = {"baccarat": "바카라", "blackjack": "블랙잭", "crash": "비행기", "ladder": "사다리"}
 BJ_RESULT_TEXT = {"blackjack": "블랙잭", "win": "승", "lose": "패", "push": "푸시", "surrender": "서렌더"}
 
 # 베팅 종류 이름표 (표시 순서도 이 순서)
@@ -25,6 +26,9 @@ LABELS = {
     "bj_ins": "블랙잭 인슈어런스",
     "crash_1": "비행기 베팅",
     "crash_2": "비행기 베팅 2",  # 베팅 2개를 쓰던 때의 기록 호환
+    **{f"ld_{k}": f"사다리 {name}" for k, name in (
+        ("left", "좌"), ("right", "우"), ("three", "3줄"), ("four", "4줄"), ("odd", "홀"), ("even", "짝"),
+        ("L3E", "좌3짝"), ("L4O", "좌4홀"), ("R3O", "우3홀"), ("R4E", "우4짝"))},
 }
 ORDER = list(LABELS)
 
@@ -82,7 +86,7 @@ def cards_text(cards: list[dict]) -> str:
 
 
 def bets_text(bets: dict[str, int]) -> str:
-    return " · ".join(f"{LABELS.get(k, k).removeprefix('바카라 ').removeprefix('블랙잭 ').removeprefix('비행기 ')} {v:,}"
+    return " · ".join(f"{LABELS.get(k, k).removeprefix('바카라 ').removeprefix('블랙잭 ').removeprefix('비행기 ').removeprefix('사다리 ')} {v:,}"
                       for k, v in bets.items())
 
 
@@ -94,6 +98,9 @@ def _bj_hand_value(cards: list[dict]) -> int:
 
 def _describe(h: dict) -> tuple[str, str, str]:
     """(결과, 플레이어·자리 카드, 뱅커·딜러 카드)."""
+    if game_of(h) == "ladder":
+        hits = [LABELS[s["bet"]].removeprefix("사다리 ") for s in h["settlements"] if s["outcome"] == "win"]
+        return f"{h['result']} · 적중 {', '.join(hits) if hits else '없음'}", "", ""
     if game_of(h) == "crash":
         parts = [f"{p}번 {m:.2f}x 멈춤" if m else f"{p}번 추락" for p, m in sorted(h["cashouts"].items())]
         return f"추락 {h['crash']:.2f}x · {', '.join(parts)}", "", ""
@@ -122,7 +129,7 @@ def rows(history: list[dict]) -> list[dict]:
             "판": h["no"],
             "시각": h["time"],
             "게임": GAME_TEXT[game_of(h)],
-            "슈": f"#{h['round_no']}" if game_of(h) == "crash" else f"{h['shoe']}-{h['round_no']}",
+            "슈": f"#{h['round_no']}" if game_of(h) in ("crash", "ladder") else f"{h['shoe']}-{h['round_no']}",
             "베팅": bets_text(h["bets"]),
             "결과": result,
             "플레이어·자리 카드": player_cards,

@@ -24,6 +24,10 @@ export default function (component) {
       prev.alive = false;
       s.bet = prev.bet;
     }
+    // JS가 새로 불러와지면 이전 버전의 그리기 루프를 멈춘다 (같은 canvas에 두 루프가 그리지 않게)
+    const old = window.__crashState;
+    if (old && old !== s) old.alive = false;
+    window.__crashState = s;
     STATE.set(parentElement, s);
     buildPanel(s);
     bindKeys(s, (code) => onKey(s, code));
