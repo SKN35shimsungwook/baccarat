@@ -1,0 +1,83 @@
+<div class="bt-root">
+  <section class="bt-stage" data-el="stage">
+    <video class="bt-video" data-el="video" muted playsinline preload="auto"></video>
+    <video class="bt-video" data-el="video2" muted playsinline preload="auto"></video>
+    <img class="bt-held" data-el="held" alt="">
+    <header class="bt-top">
+      <div class="bt-kv"><span>보유 칩</span><b data-el="balance">0</b></div>
+      <div class="bt-kv"><span>손익</span><b data-el="profit">0</b></div>
+      <div class="bt-kv right"><span>총 베팅</span><b data-el="totalbet">0</b></div>
+    </header>
+    <div class="bt-live"><i></i>LIVE · 바카라</div>
+    <div class="bt-banner" data-el="banner"></div>
+    <div class="bt-status" data-el="status">베팅하세요</div>
+  </section>
+
+  <section class="bt-felt">
+    <div class="bt-rule">BANKER WINS PAY 0.95 TO 1 · TIE PAYS 8 TO 1</div>
+    <div class="bt-hands">
+      <div class="bt-hand player">
+        <div class="bt-hand-head"><span class="name">PLAYER</span><span class="score" data-el="pscore"></span></div>
+        <div class="bt-cards" data-el="pcards"></div>
+      </div>
+      <div class="bt-hand banker">
+        <div class="bt-hand-head"><span class="score" data-el="bscore"></span><span class="name">BANKER</span></div>
+        <div class="bt-cards" data-el="bcards"></div>
+      </div>
+    </div>
+    <div class="bt-hint" data-el="hint"></div>
+
+    <div class="bt-spots">
+      <div class="bt-row side">
+        <button class="bt-spot pp" data-bet="player_pair"><span class="lbl">P 페어</span><span class="pay"></span></button>
+        <button class="bt-spot tie" data-bet="tie"><span class="lbl">타이</span><span class="pay"></span></button>
+        <button class="bt-spot bp" data-bet="banker_pair"><span class="lbl">B 페어</span><span class="pay"></span></button>
+        <button class="bt-spot tiger" data-bet="tiger"><span class="lbl">타이거</span><span class="pay"></span></button>
+      </div>
+      <div class="bt-row main">
+        <button class="bt-spot player" data-bet="player"><span class="en">PLAYER</span><span class="lbl">플레이어</span><span class="pay"></span></button>
+        <button class="bt-spot banker" data-bet="banker"><span class="en">BANKER</span><span class="lbl">뱅커</span><span class="pay"></span></button>
+      </div>
+    </div>
+  </section>
+
+  <section class="bt-controls">
+    <div class="bt-chiptray" data-el="chiptray"></div>
+    <div class="bt-actions">
+      <button data-act="undo" title="마지막 칩 취소">되돌리기</button>
+      <button data-act="clear" title="베팅 전부 취소">전부 취소</button>
+      <button data-act="double" title="현재 베팅 2배">2배</button>
+      <button data-act="rebet" title="지난 판 베팅 그대로">재베팅</button>
+      <button data-act="reveal" class="ghost" title="남은 카드 모두 공개">모두 공개</button>
+      <button data-act="deal" class="primary">딜</button>
+    </div>
+  </section>
+
+  <section class="bt-board">
+    <div class="bt-stats" data-el="stats"></div>
+    <div class="bt-roadwrap">
+      <div class="bt-road-block bead-block">
+        <div class="bt-road-title">주구로</div>
+        <div class="bt-road bead" data-el="bead"></div>
+      </div>
+      <div class="bt-road-block big-block">
+        <div class="bt-road-title">원매</div>
+        <div class="bt-road big" data-el="big"></div>
+        <div class="bt-derived">
+          <div><div class="bt-road-title">대안길</div><div class="bt-road small-cell" data-el="big_eye"></div></div>
+          <div><div class="bt-road-title">소안길</div><div class="bt-road small-cell" data-el="small"></div></div>
+          <div><div class="bt-road-title">갑을길</div><div class="bt-road small-cell" data-el="cockroach"></div></div>
+        </div>
+      </div>
+      <div class="bt-ask" data-el="ask"></div>
+    </div>
+  </section>
+
+  <div class="bt-overlay" data-el="overlay">
+    <div class="box">
+      <p>컷 카드가 나와서 이번 슈가 끝났습니다.</p>
+      <button data-act="newshoe" class="primary">새 슈 시작</button>
+    </div>
+  </div>
+  <div class="bt-toast" data-el="toast"></div>
+</div>

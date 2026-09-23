@@ -1,0 +1,10 @@
+[server]
+# static/ 폴더(카드 이미지, 딜러 배경)를 app/static/ 경로로 제공
+enableStaticServing = true
+
+[theme]
+base = "dark"
+primaryColor = "#d4af5f"
+backgroundColor = "#0d0907"
+secondaryBackgroundColor = "#1a1310"
+textColor = "#efe4cf"
