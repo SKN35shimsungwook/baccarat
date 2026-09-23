@@ -80,7 +80,7 @@ with st.sidebar:
     ui.chips_sidebar()
 
     st.subheader("환수율 · 배당 확률")
-    rtp = st.slider("환수율", min_value=50, max_value=99, value=int(round(game.rtp * 100)), step=1, format="%d%%",
+    rtp = st.slider("환수율", min_value=70, max_value=99, value=int(round(game.rtp * 100)), step=1, format="%d%%",
                     key="crash_rtp", disabled=flying,
                     help="x배 이상 버틸 확률 = 환수율 ÷ x. 어느 배당에서 멈추든 장기 기대 환수는 이 값과 같습니다.")
     if not flying:

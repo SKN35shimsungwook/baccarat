@@ -72,6 +72,25 @@
   pointer-events: none;
 }
 .cr-mult.idle { opacity: .55; }
+/* 멈춘 뒤 내 결과 배지 (비행기와 숫자는 계속 올라간다) */
+.cr-mine {
+  position: absolute;
+  z-index: 3;
+  top: calc(34% - clamp(56px, 9.5cqw, 88px));
+  left: 50%;
+  translate: -50% 0;
+  padding: 4px 14px;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 15px;
+  color: #fff;
+  background: rgba(31, 157, 85, .95);
+  box-shadow: 0 3px 10px rgba(16, 38, 63, .3);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: cr-pop .4s ease;
+}
+.cr-mine:empty { display: none; }
 .cr-mult.cashed { color: #d6ffe4; text-shadow: 0 3px 0 #147040, 0 0 24px rgba(20, 112, 64, .5); }
 .cr-mult.crashed { color: #ffd2cc; text-shadow: 0 3px 0 #8c1d14, 0 0 24px rgba(140, 29, 20, .5); }
 .cr-msg {

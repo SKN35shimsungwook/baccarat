@@ -71,7 +71,7 @@ class Bet:
 @dataclass
 class CrashTable:
     wallet: Wallet
-    rtp: float = 0.50   # 환수율 50%: 판의 약 절반은 1.00x에서 바로 추락 (고배당은 드물게: 10x 이상 5%, 100x 이상 0.5%)
+    rtp: float = 0.85   # 환수율 85%: 약 16%는 1.00x에서 바로 추락, 10x 이상 8.5%, 100x 이상 0.85%
     min_bet: int = 1_000
     max_bet: int = 1_000_000
     client_seed: str = field(default_factory=lambda: secrets.token_hex(8))

@@ -18,7 +18,7 @@ def test_growth_curve():
     assert time_at(10) == pytest.approx(27.09, abs=0.01)
 
 
-@pytest.mark.parametrize("rtp", [0.50, 0.90, 0.97, 0.99])
+@pytest.mark.parametrize("rtp", [0.50, 0.85, 0.97, 0.99])
 def test_survival_is_rtp_over_x(rtp):
     xs = samples(200_000, rtp)
     for target in (1.5, 2, 5, 10):
@@ -110,14 +110,14 @@ def test_success_table_is_proportional_to_rtp():
             assert math.isclose(row["성공 확률"] * x, rtp)
 
 
-def test_default_rtp_is_50_percent_with_rare_big_wins():
+def test_default_rtp_is_85_percent_with_rare_big_wins():
     t = CrashTable(SessionWallet({}, initial=100_000))
-    assert t.rtp == 0.50
+    assert t.rtp == 0.85
     xs = samples(200_000, t.rtp)
     n = len(xs)
-    assert sum(x == 1.00 for x in xs) / n == pytest.approx(1 - 0.50 / 1.01, abs=0.01)  # 약 50%는 뜨자마자 추락
-    assert sum(x >= 10 for x in xs) / n == pytest.approx(0.05, abs=0.003)             # 10배 이상도 5%는 나온다
-    assert sum(x >= 100 for x in xs) / n == pytest.approx(0.005, abs=0.001)           # 100배 이상 0.5%
+    assert sum(x == 1.00 for x in xs) / n == pytest.approx(1 - 0.85 / 1.01, abs=0.01)  # 약 16%는 뜨자마자 추락
+    assert sum(x >= 10 for x in xs) / n == pytest.approx(0.085, abs=0.004)            # 10배 이상 8.5%
+    assert sum(x >= 100 for x in xs) / n == pytest.approx(0.0085, abs=0.0015)         # 100배 이상 0.85%
 
 
 def test_cash_out_keeps_two_decimals_exactly():

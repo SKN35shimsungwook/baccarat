@@ -167,6 +167,7 @@ function takeoff(s) {
   s.trail = [];
   s.els.msg.textContent = "";
   s.els.msg.className = "cr-msg";
+  clearMine(s);
   renderControls(s);
   s.trigger("start", {
     bets: { [PANEL]: { stake: s.bet.stake, auto: s.bet.auto ? s.bet.target : null } },
@@ -188,10 +189,18 @@ function cashOut(s, at) {
   s.trigger(`cashout${PANEL}`, { m, nonce: Date.now() });
 }
 
+// 멈춘 뒤: 내 결과는 초록 배지로 붙여 두고, 비행기와 숫자는 추락할 때까지 계속 올라가게 둔다
 function showCashedMessage(s) {
   const r = s.round;
-  s.els.msg.textContent = `${r.cashed.toFixed(2)}x에서 멈춤 · +${fmt(profitOf(r))}`;
-  s.els.msg.className = "cr-msg good";
+  s.els.mine.textContent = `✓ ${r.cashed.toFixed(2)}x에서 멈춤 · +${fmt(profitOf(r))}`;
+  if (!r.crashedShown) {
+    s.els.msg.textContent = "";
+    s.els.msg.className = "cr-msg";
+  }
+}
+
+function clearMine(s) {
+  s.els.mine.textContent = "";
 }
 
 function finishRound(s) {
@@ -215,6 +224,7 @@ function sync(s) {
       const conf = v.bets[PANEL];
       if (!conf || conf.cashed_at == null) {
         r.cashed = null;
+        clearMine(s);
         if (!r.crashedShown) {
           s.els.msg.textContent = "";
           s.els.msg.className = "cr-msg";
@@ -258,6 +268,7 @@ function startRound(s, v) {
   s.ui = "flying";
   s.trail = [];
   s.pops = [];
+  clearMine(s);
   if (s.round.cashed) showCashedMessage(s);
   else {
     s.els.msg.textContent = "";
@@ -280,11 +291,9 @@ function crashNow(s) {
   const r = s.round;
   r.crashedShown = true;
   r.crashAt = performance.now();
-  // 이미 멈췄으면 내 결과만 보여 준다 (추락 지점은 위쪽 기록 줄에만)
-  if (!r.cashed) {
-    s.els.msg.textContent = `추락! ${r.crash.toFixed(2)}x`;
-    s.els.msg.className = "cr-msg bad";
-  }
+  // 멈췄든 아니든 최종 배당을 보여 준다 (멈췄으면 내 결과 배지는 그대로)
+  s.els.msg.textContent = r.cashed ? `최종 ${r.crash.toFixed(2)}x에서 추락` : `추락! ${r.crash.toFixed(2)}x`;
+  s.els.msg.className = r.cashed ? "cr-msg" : "cr-msg bad";
   renderControls(s);
   finishRound(s);
 }
@@ -295,8 +304,12 @@ function endRound(s, last) {
   if (!r.crashedShown) crashNow(s);
   const b = last.bets.find((x) => x.panel === PANEL);
   r.cashed = b && b.cashed_at != null ? b.cashed_at : null;
-  if (r.cashed) showCashedMessage(s);
-  else {
+  if (r.cashed) {
+    // 최종 배당 · 내 배당 · 수익을 한 줄로
+    clearMine(s);
+    s.els.msg.textContent = `최종 ${last.crash.toFixed(2)}x · 내 배당 ${r.cashed.toFixed(2)}x · +${fmt(profitOf(r))}`;
+    s.els.msg.className = "cr-msg good";
+  } else {
     s.els.msg.textContent = `추락 ${last.crash.toFixed(2)}x · -${fmt(r.stake)}`;
     s.els.msg.className = "cr-msg bad";
   }
@@ -307,6 +320,7 @@ function endRound(s, last) {
       s.ui = "betting";
       s.els.msg.textContent = "";
       s.els.msg.className = "cr-msg";
+      clearMine(s);
       renderControls(s);
     }
   }, RESULT_HOLD);
@@ -423,12 +437,11 @@ function frame(s, now) {
   if (crashed) drawSmoke(ctx, px, py, now, r.crashAt);
   drawFloats(s, ctx, px, py, now);
 
-  // 큰 배당 숫자: 멈췄으면 내가 멈춘 배당에서 고정 (비행기는 추락할 때까지 계속 난다)
+  // 큰 배당 숫자: 멈춘 뒤에도 추락할 때까지 계속 올라가서 최종 배당을 보여 준다
   const mult = s.els.mult;
-  const mine = showRound && r.cashed;
-  const text = `${(mine ? r.cashed : m).toFixed(2)}x`;
+  const text = `${m.toFixed(2)}x`;
   if (mult.textContent !== text) mult.textContent = text;
-  const cls = `cr-mult${!showRound ? " idle" : mine ? " cashed" : crashed ? " crashed" : ""}`;
+  const cls = `cr-mult${!showRound ? " idle" : crashed ? " crashed" : ""}`;
   if (mult.className !== cls) mult.className = cls;
   if (flying && !crashed && !r.cashed && now - (s.lastPanelPaint || 0) > 100) {
     s.lastPanelPaint = now;
