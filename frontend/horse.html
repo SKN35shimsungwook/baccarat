@@ -1,0 +1,54 @@
+<div class="bt-root hr">
+  <section class="hr-stage">
+    <header class="bt-top hr-top">
+      <div class="bt-kv"><span>보유 칩</span><b data-el="balance">0</b></div>
+      <div class="bt-kv"><span>손익</span><b data-el="profit">0</b></div>
+      <div class="bt-kv right"><span>이번 경주 베팅</span><b data-el="totalbet">0</b></div>
+    </header>
+    <div class="hr-main">
+      <div class="hr-screen" data-el="screen">
+        <canvas class="hr-canvas" data-el="canvas"></canvas>
+        <div class="hr-hud" data-el="hud"></div>
+        <div class="hr-shout" data-el="shout"></div>
+        <div class="hr-flash" data-el="flash"></div>
+        <div class="hr-result" data-el="result"></div>
+      </div>
+      <aside class="hr-side">
+        <div class="hr-ticket hr-choice" data-el="choice"></div>
+        <div class="hr-ticket hr-tipster" data-el="tipster"></div>
+      </aside>
+    </div>
+    <div class="hr-caster"><span class="mic">해설</span><span data-el="caster"></span></div>
+    <div class="hr-fair" data-el="fair"></div>
+  </section>
+
+  <section class="bt-controls hr-controls">
+    <div class="hr-cards" data-el="cards"></div>
+    <div class="hr-betinfo" data-el="betinfo"></div>
+    <div class="hr-bottom">
+      <div class="bt-chiptray" data-el="chiptray"></div>
+      <div class="bt-actions">
+        <button data-act="undo">되돌리기 <kbd>Z</kbd></button>
+        <button data-act="clear">전부 취소 <kbd>C</kbd></button>
+        <button data-act="rebet">재베팅 <kbd>R</kbd></button>
+        <button data-act="start" class="hr-start"><span>출발</span> <kbd>Space</kbd></button>
+      </div>
+    </div>
+  </section>
+
+  <section class="hr-lower">
+    <div class="hr-panel hr-mine" data-el="mystats"></div>
+    <div class="hr-panel">
+      <div class="hr-panel-title">최근 우승마</div>
+      <div class="hr-recent" data-el="recent"></div>
+      <div class="hr-tierstat" data-el="tierstat"></div>
+      <div class="hr-panel-title hr-gap">지난 100경주 최다 우승마</div>
+      <div class="hr-top" data-el="top"></div>
+    </div>
+  </section>
+  <section class="hr-panel hr-board">
+    <div class="hr-panel-title">내 경주 기록 (최근 10경주)</div>
+    <div class="hr-mylist" data-el="mylist"></div>
+  </section>
+  <div class="bt-toast" data-el="toast"></div>
+</div>
