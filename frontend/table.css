@@ -628,7 +628,7 @@
   .bt-hand-head .name { font-size: 12px; letter-spacing: .1em; }
   .bt-hand-head .score { min-width: 26px; height: 26px; font-size: 15px; }
   .bt-cards { gap: 3px; }
-  .bt-banner { font-size: 17px; padding: 6px 18px; top: 50%; }
+  .bt-banner { font-size: 17px; padding: 6px 18px; top: 66%; }  /* 위쪽 상태 문구와 겹치지 않게 */
   .bt-row.side { grid-template-columns: repeat(2, 1fr); }
   .bt-row.main .bt-spot .lbl { font-size: 18px; }
   .bt-controls, .bt-board { margin-left: 8px; margin-right: 8px; }

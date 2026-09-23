@@ -1,0 +1,220 @@
+/* 블랙잭 전용 스타일. table.css(펠트·카드·칩·무대) 뒤에 이어 붙는다. */
+
+.bj .bt-felt { padding: 12px 16px 48px; }
+
+/* ── 카운트 표시 ───────────────────────── */
+.bj-count {
+  position: absolute;
+  z-index: 2;
+  top: 58px;
+  right: 16px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--cream);
+  background: rgba(0, 0, 0, .55);
+  border: 1px solid rgba(212, 175, 95, .5);
+}
+.bj-count:empty { display: none; }
+.bj-count b { color: var(--gold-hi); font-family: var(--display); }
+
+/* ── 딜러 / 문구 ───────────────────────── */
+.bj-dealer {
+  display: flex;
+  justify-content: center;
+  min-height: calc(var(--card-h) + 12px);
+}
+.bj-hand-row { display: flex; align-items: center; gap: 10px; }
+.bj-rules {
+  text-align: center;
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: .2em;
+  color: var(--gold);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
+  margin-top: 8px;
+}
+.bj-rules.sub {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  color: rgba(212, 175, 95, .85);
+  margin: 2px auto 10px;
+  padding-bottom: 8px;
+  max-width: 620px;
+  border-bottom: 1px solid rgba(212, 175, 95, .4);
+}
+
+/* ── 카드 묶음 (겹쳐 놓기) ──────────────── */
+.bj-cards { display: flex; align-items: flex-end; min-height: var(--card-h); }
+.bj-cards:empty { min-width: var(--card-w); }
+.bj-cards .bt-card { animation: none; }
+.bj-cards .bt-card + .bt-card { margin-left: calc(var(--card-w) * -0.55); }
+.bj-cards .bt-card.new { animation: bt-deal-dealer .45s cubic-bezier(.2, .8, .3, 1) both; animation-delay: var(--d, 0s); }
+.bj-cards .bt-card.flip .back { animation: bt-flip .42s ease forwards; animation-delay: var(--d, 0s); }
+.bj-cards .bt-card.flip .face { animation: bt-flip-in .42s ease both; animation-delay: var(--d, 0s); }
+
+.bj-total {
+  min-width: 40px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  text-align: center;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--cream);
+  background: rgba(0, 0, 0, .62);
+  border: 1px solid var(--gold);
+}
+.bj-total:empty { display: none; }
+.bj-total.bust { color: #ffb4a8; border-color: #ff6b5b; }
+.bj-total.bj { color: var(--gold-hi); border-color: var(--gold-hi); }
+.later { transition: opacity .25s; }
+.later.pending { opacity: 0; }
+
+/* ── 자리 ───────────────────────────────── */
+.bj-seats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 900px;
+  margin: 6px auto 0;
+}
+.bj-seat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(212, 175, 95, .25);
+  background: rgba(0, 0, 0, .14);
+  transition: border-color .2s, box-shadow .2s;
+}
+.bj-seat.active { border-color: var(--gold-hi); box-shadow: 0 0 24px rgba(241, 215, 146, .35); }
+.bj-hands {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: flex-end;
+  min-height: calc(var(--card-h) + 40px);
+  max-width: 100%;
+}
+.bj-hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  min-width: 0;
+}
+.bj-hand.active { border-color: var(--gold-hi); background: rgba(241, 215, 146, .1); }
+.bj-hand-meta { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.bj-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .62);
+  color: var(--cream);
+  white-space: nowrap;
+}
+.bj-tag.win, .bj-tag.blackjack { color: #9ff0c0; }
+.bj-tag.lose { color: #ffb4a8; }
+.bj-tag.push, .bj-tag.surrender { color: var(--muted); }
+
+.bj-spots { display: flex; align-items: center; gap: 8px; }
+.bj-spot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--cream);
+  border: 1.5px solid var(--gold);
+  outline: 1px solid rgba(212, 175, 95, .35);
+  outline-offset: -5px;
+  background: rgba(0, 0, 0, .22);
+  transition: background .15s, box-shadow .2s;
+}
+.bj-spot:hover { background: rgba(241, 215, 146, .1); }
+.bj-spot.main { width: 76px; height: 76px; font-family: var(--display); font-size: 24px; color: var(--gold); }
+.bj-spot.side { width: 48px; height: 48px; font-size: 12px; line-height: 1.1; text-align: center; font-weight: 700; font-family: var(--display); }
+.bj-spot .stack { position: absolute; bottom: -8px; left: 50%; translate: -50% 0; }
+.bj-spot.side .stack { bottom: -12px; }
+.bj-spot.won { border-color: var(--gold-hi); box-shadow: 0 0 0 1px var(--gold-hi), 0 0 18px rgba(241, 215, 146, .55); }
+.bj-seat-net {
+  min-height: 20px;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 700;
+}
+.bj-seat-net.plus { color: #9ff0c0; }
+.bj-seat-net.minus { color: #ffb4a8; }
+
+/* ── 행동 버튼 / 인슈어런스 / 힌트 ────────── */
+.bj-play { display: none; gap: 6px; flex-wrap: wrap; }
+.bj-play.show { display: flex; }
+.bj-play button {
+  min-width: 76px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--gold);
+  background: linear-gradient(#2a1f18, #150f0b);
+  color: var(--cream);
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.bj-play button:disabled { opacity: .3; cursor: not-allowed; }
+.bj-play button.hinted { border-color: var(--gold-hi); box-shadow: 0 0 0 2px var(--gold-hi), 0 0 14px rgba(241, 215, 146, .5); }
+.bt-actions.hide { display: none; }
+.bj-ins { display: none; gap: 8px; flex-wrap: wrap; align-items: center; }
+.bj-ins.show { display: flex; }
+.bj-ins .seat-ins {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--gold-lo);
+  font-size: 13px;
+}
+.bj-ins button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--gold-lo);
+  background: rgba(0, 0, 0, .35);
+  color: var(--paper);
+  font-weight: 600;
+}
+.bj-ins button.on { border-color: var(--gold-hi); color: var(--gold-hi); background: rgba(212, 175, 95, .15); }
+.bj-hint { width: 100%; font-size: 13px; color: var(--gold-hi); min-height: 18px; }
+.bj-hint:empty { display: none; }
+
+@container bt (max-width: 720px) {
+  .bj .bt-felt { padding: 8px 6px 34px; }
+  .bj-seats { gap: 4px; }
+  .bj-seat { padding: 6px 2px 8px; }
+  .bj-spot.main { width: 54px; height: 54px; font-size: 18px; }
+  .bj-spot.side { width: 36px; height: 36px; font-size: 10px; }
+  .bj-spots { gap: 4px; }
+  .bj-rules { font-size: 12px; letter-spacing: .12em; }
+  .bj-rules.sub { font-size: 8px; letter-spacing: .08em; }
+  .bj-play button { min-width: 60px; padding: 9px 10px; }
+  .bj-count { top: 76px; right: 10px; }
+  .bj-hands { gap: 2px; }
+}
+
+/* 휴대폰 폭: 자리 3개(각 약 110px)에 베팅 원 3개가 들어가도록 */
+@container bt (max-width: 440px) {
+  .bj-spot.main { width: 42px; height: 42px; font-size: 15px; }
+  .bj-spot.side { width: 28px; height: 28px; font-size: 8px; outline: none; }
+  .bj-spots { gap: 2px; }
+  .bj-spot .stack { bottom: -12px; }
+  .bj-total { font-size: 12px; padding: 2px 6px; min-width: 30px; }
+  .bj-play button { min-width: 0; flex: 1; padding: 9px 6px; }
+}

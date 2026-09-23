@@ -4,21 +4,23 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from ledger import by_bet, rows, summarize
+from ledger import GAME_TEXT, by_bet, game_of, rows, summarize
 
 GOLD = "#d4af5f"
 GAIN = "#12a396"   # 이익 (어두운 배경 대비·색각 이상 구분 검증 통과)
 LOSS = "#e0584e"   # 손실
 
 ss = st.session_state
-history: list[dict] = ss.history
-
 st.title("베팅 기록")
 st.caption("이번 세션에서 진행한 판만 기록됩니다. 페이지를 새로 고침하면 칩과 함께 초기화됩니다.")
 
+game = st.segmented_control("게임", ["전체", *GAME_TEXT.values()], default="전체", key="history_game")
+history: list[dict] = [h for h in ss.history if game in (None, "전체") or GAME_TEXT[game_of(h)] == game]
+
 if not history:
     st.info("아직 기록이 없습니다. 테이블에서 한 판을 진행하면 여기에 쌓입니다.", icon=":material/info:")
-    st.page_link("app_pages/table.py", label="테이블로 가기", icon=":material/playing_cards:")
+    st.page_link("app_pages/table.py", label="바카라 하러 가기", icon=":material/playing_cards:")
+    st.page_link("app_pages/blackjack.py", label="블랙잭 하러 가기", icon=":material/style:")
     st.stop()
 
 s = summarize(history)

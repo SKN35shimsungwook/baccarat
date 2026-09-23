@@ -1,43 +1,33 @@
 # -*- coding: utf-8 -*-
-"""테이블 페이지.
+"""바카라 테이블 페이지.
 
 - 승패·정산·출목표는 전부 파이썬(engine/)이 계산한다.
 - 테이블 화면은 Custom Component v2(frontend/)가 그린다: 칩 베팅, 카드 분배, 스퀴즈, 출목표 표시.
   JS → 파이썬: setTriggerValue("deal" | "new_shoe")  /  파이썬 → JS: data=...
 - 판이 끝날 때마다 st.session_state.history 에 기록을 남긴다 (베팅 기록 페이지에서 본다).
 """
-import json
 from datetime import datetime
-from pathlib import Path
 
 import streamlit as st
 
+import ui
 from engine import SIDE_BETS, Bet, BetError, GameTable, TableRules
 from engine.odds import house_edges, win_probabilities
 
-ROOT = Path(__file__).resolve().parent.parent
-FRONTEND = ROOT / "frontend"
-STATIC = ROOT / "static"
 TABLE_KEY = "table_ui"
-CHIP_DENOMS = [1_000, 5_000, 10_000, 50_000, 100_000, 500_000, 1_000_000]
 
 _TABLE_COMPONENT = st.components.v2.component(
     "baccarat_table",
-    html=(FRONTEND / "table.html").read_text(encoding="utf-8"),
-    css=(FRONTEND / "table.css").read_text(encoding="utf-8"),
-    js=(FRONTEND / "table.js").read_text(encoding="utf-8"),
+    html=ui.frontend("table.html"),
+    css=ui.frontend("table.css"),
+    # 공통 코드(딜러 영상, 칩, 토스트 등) 뒤에 바카라 전용 코드를 이어 붙인다
+    js=ui.frontend("common.js", "table.js"),
 )
 
 
 @st.cache_data
 def edge_table(tie_payout: int, no_commission: bool) -> dict:
     return house_edges(TableRules(tie_payout=tie_payout, no_commission=no_commission))
-
-
-@st.cache_data
-def dealer_clips(who: str) -> dict:
-    """딜러 동작 클립의 구간·카드 추적 정보 (tools/build_dealer_clips.py 가 만든다)."""
-    return json.loads((STATIC / f"dealer_{who}_clips.json").read_text(encoding="utf-8"))
 
 
 @st.cache_data
@@ -79,6 +69,7 @@ def on_deal() -> None:
         "no": len(ss.history) + 1,
         "time": datetime.now().strftime("%H:%M:%S"),
         "shoe": table.shoe_no,
+        "game": "baccarat",
     })
 
 
@@ -90,14 +81,7 @@ def on_new_shoe() -> None:
 
 # ── 사이드바: 칩 / 테이블 설정 ────────────────────────────────────────
 with st.sidebar:
-    st.subheader("칩")
-    with st.form("chips_form", border=False):
-        start = st.number_input("시작 칩", min_value=10_000, max_value=1_000_000_000,
-                                value=ss.start_chips, step=100_000, format="%d")
-        if st.form_submit_button("이 금액으로 시작", icon=":material/restart_alt:", width="stretch"):
-            ss.start_chips = int(start)
-            table.wallet.reset(int(start))
-    st.caption("보유 칩과 손익은 테이블 위쪽에 표시됩니다. (결과 연출 전에 미리 보이지 않도록)")
+    ui.chips_sidebar()
 
     st.subheader("테이블 규칙")
     tie = st.segmented_control("타이 배당", ["8:1", "9:1"], default="8:1", key="tie_opt")
@@ -107,8 +91,7 @@ with st.sidebar:
     table.rules = TableRules(tie_payout=tie_payout, no_commission=no_comm)
 
     st.subheader("연출")
-    dealer = st.segmented_control("딜러", ["남성 딜러", "여성 딜러"], default="남성 딜러", key="dealer_opt")
-    dealer_code = "f" if dealer == "여성 딜러" else "m"
+    dealer_code = ui.dealer_picker()
     reveal = st.segmented_control(
         "카드 공개", ["딜러가 공개", "직접 스퀴즈"], default="딜러가 공개", key="reveal_opt",
         help="딜러가 공개: 딜러가 카드를 뒤집고 결정적인 카드는 천천히 젖힙니다. 직접 스퀴즈: 카드를 드래그해서 직접 젖힙니다.",
@@ -144,8 +127,8 @@ rules = table.rules
 data = {
     "balance": table.wallet.balance,
     "start_chips": ss.start_chips,
-    "chips": CHIP_DENOMS,
-    "asset_base": "app/static/",  # .streamlit/config.toml 의 enableStaticServing
+    "chips": ui.CHIP_DENOMS,
+    "asset_base": ui.ASSET_BASE,
     "rules": {
         "tie": rules.tie_payout,
         "no_commission": rules.no_commission,
@@ -165,7 +148,7 @@ data = {
     "roads_prev": fresh["roads_prev"] if fresh else None,
     "error": ss.error,
     "dealer": dealer_code,
-    "clips": dealer_clips(dealer_code),
+    "clips": ui.dealer_clips(dealer_code),
     "squeeze": reveal == "직접 스퀴즈",
     "timer": timer,
 }

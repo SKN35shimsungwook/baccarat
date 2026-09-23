@@ -1,0 +1,49 @@
+<div class="bt-root bj">
+  <section class="bt-stage" data-el="stage">
+    <video class="bt-video" data-el="video" muted playsinline preload="auto"></video>
+    <video class="bt-video" data-el="video2" muted playsinline preload="auto"></video>
+    <img class="bt-held" data-el="held" alt="">
+    <header class="bt-top">
+      <div class="bt-kv"><span>보유 칩</span><b data-el="balance">0</b></div>
+      <div class="bt-kv"><span>손익</span><b data-el="profit">0</b></div>
+      <div class="bt-kv right"><span>총 베팅</span><b data-el="totalbet">0</b></div>
+    </header>
+    <div class="bt-live"><i></i>LIVE · 블랙잭</div>
+    <div class="bj-count" data-el="count"></div>
+    <div class="bt-banner" data-el="banner"></div>
+    <div class="bt-status" data-el="status">베팅하세요</div>
+  </section>
+
+  <section class="bt-felt bj-felt">
+    <div class="bj-dealer">
+      <div class="bj-hand-row">
+        <div class="bj-cards" data-el="dcards"></div>
+        <span class="bj-total" data-el="dtotal"></span>
+      </div>
+    </div>
+    <div class="bj-rules" data-el="rule1">BLACKJACK PAYS 3 TO 2</div>
+    <div class="bj-rules sub" data-el="rule2">DEALER MUST STAND ON ALL 17s · INSURANCE PAYS 2 TO 1</div>
+    <div class="bj-seats" data-el="seats"></div>
+  </section>
+
+  <section class="bt-controls">
+    <div class="bt-chiptray" data-el="chiptray"></div>
+    <div class="bt-actions" data-el="betacts">
+      <button data-act="undo" title="마지막 칩 취소">되돌리기</button>
+      <button data-act="clear" title="베팅 전부 취소">전부 취소</button>
+      <button data-act="x2" title="현재 베팅 2배">2배</button>
+      <button data-act="rebet" title="지난 판 베팅 그대로">재베팅</button>
+      <button data-act="deal" class="primary">딜</button>
+    </div>
+    <div class="bj-play" data-el="playacts">
+      <button data-play="hit">히트</button>
+      <button data-play="stand">스탠드</button>
+      <button data-play="double">더블</button>
+      <button data-play="split">스플릿</button>
+      <button data-play="surrender">서렌더</button>
+    </div>
+    <div class="bj-ins" data-el="insbox"></div>
+    <div class="bj-hint" data-el="hint"></div>
+  </section>
+  <div class="bt-toast" data-el="toast"></div>
+</div>

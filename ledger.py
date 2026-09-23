@@ -1,8 +1,10 @@
-"""베팅 기록 집계 (Streamlit과 무관한 순수 파이썬).
+"""베팅 기록 집계 (Streamlit과 무관한 순수 파이썬). 바카라와 블랙잭 기록을 함께 다룬다.
 
-기록 한 건은 판이 끝날 때 app_pages/table.py 가 남기는 dict다:
-    {"no", "time", "shoe", "round_no", "bets", "result", "settlements",
+기록 한 건은 판이 끝날 때 게임 페이지가 남기는 dict다. 공통 필드:
+    {"no", "time", "game", "shoe", "round_no", "bets", "settlements",
      "total_stake", "total_returned", "net", "balance_after"}
+- 바카라: "result" (engine.rules.RoundResult.to_dict)
+- 블랙잭: "dealer", "seats" (bj.game.BJTable.round_record)
 """
 from __future__ import annotations
 
@@ -10,6 +12,22 @@ from engine.bets import BET_LABELS, Bet
 
 SUIT_SYMBOL = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
 WINNER_TEXT = {"P": "플레이어", "B": "뱅커", "T": "타이"}
+GAME_TEXT = {"baccarat": "바카라", "blackjack": "블랙잭"}
+BJ_RESULT_TEXT = {"blackjack": "블랙잭", "win": "승", "lose": "패", "push": "푸시", "surrender": "서렌더"}
+
+# 베팅 종류 이름표 (표시 순서도 이 순서)
+LABELS = {
+    **{b.value: f"바카라 {BET_LABELS[b]}" for b in Bet},
+    "bj_main": "블랙잭 메인",
+    "bj_pp": "블랙잭 퍼펙트 페어",
+    "bj_213": "블랙잭 21+3",
+    "bj_ins": "블랙잭 인슈어런스",
+}
+ORDER = list(LABELS)
+
+
+def game_of(h: dict) -> str:
+    return h.get("game", "baccarat")  # 게임 필드가 생기기 전 바카라 기록 호환
 
 
 def summarize(history: list[dict]) -> dict:
@@ -42,10 +60,9 @@ def by_bet(history: list[dict]) -> list[dict]:
             a["wins"] += st["outcome"] == "win"
             a["stake"] += st["stake"]
             a["returned"] += st["returned"]
-    order = [b.value for b in Bet]
     return [
         {
-            "bet": BET_LABELS[Bet(k)],
+            "bet": LABELS.get(k, k),
             "count": a["count"],
             "wins": a["wins"],
             "hit_rate": a["wins"] / a["count"],
@@ -53,7 +70,7 @@ def by_bet(history: list[dict]) -> list[dict]:
             "returned": a["returned"],
             "net": a["returned"] - a["stake"],
         }
-        for k, a in sorted(acc.items(), key=lambda kv: order.index(kv[0]))
+        for k, a in sorted(acc.items(), key=lambda kv: ORDER.index(kv[0]) if kv[0] in ORDER else len(ORDER))
     ]
 
 
@@ -62,22 +79,48 @@ def cards_text(cards: list[dict]) -> str:
 
 
 def bets_text(bets: dict[str, int]) -> str:
-    return " · ".join(f"{BET_LABELS[Bet(k)]} {v:,}" for k, v in bets.items())
+    return " · ".join(f"{LABELS.get(k, k).removeprefix('바카라 ').removeprefix('블랙잭 ')} {v:,}"
+                      for k, v in bets.items())
+
+
+def _bj_hand_value(cards: list[dict]) -> int:
+    total = sum(1 if c["rank"] == "A" else 10 if c["rank"] in ("10", "J", "Q", "K") else int(c["rank"])
+                for c in cards)
+    return total + 10 if any(c["rank"] == "A" for c in cards) and total + 10 <= 21 else total
+
+
+def _describe(h: dict) -> tuple[str, str, str]:
+    """(결과, 플레이어·자리 카드, 뱅커·딜러 카드)."""
+    if game_of(h) == "baccarat":
+        r = h["result"]
+        return (f"{WINNER_TEXT[r['winner']]} {r['player_total']}:{r['banker_total']}",
+                cards_text(r["player"]), cards_text(r["banker"]))
+    dealer_total = _bj_hand_value(h["dealer"])
+    dealer = "딜러 블랙잭" if len(h["dealer"]) == 2 and dealer_total == 21 else (
+        f"딜러 {dealer_total}" + (" 버스트" if dealer_total > 21 else ""))
+    parts, hands = [], []
+    for s in h["seats"]:
+        for hi, hand in enumerate(s["hands"]):
+            name = f"{s['index'] + 1}번" + (f"-{hi + 1}" if len(s["hands"]) > 1 else "")
+            parts.append(f"{name} {BJ_RESULT_TEXT.get(hand['result'], hand['result'])}")
+            hands.append(f"{name}: {cards_text(hand['cards'])}")
+    return f"{dealer} · {', '.join(parts)}", " | ".join(hands), cards_text(h["dealer"])
 
 
 def rows(history: list[dict]) -> list[dict]:
     """표·CSV용 행 (최근 판이 위)."""
     out = []
     for h in reversed(history):
-        r = h["result"]
+        result, player_cards, dealer_cards = _describe(h)
         out.append({
             "판": h["no"],
             "시각": h["time"],
+            "게임": GAME_TEXT[game_of(h)],
             "슈": f"{h['shoe']}-{h['round_no']}",
             "베팅": bets_text(h["bets"]),
-            "결과": f"{WINNER_TEXT[r['winner']]} {r['player_total']}:{r['banker_total']}",
-            "플레이어 카드": cards_text(r["player"]),
-            "뱅커 카드": cards_text(r["banker"]),
+            "결과": result,
+            "플레이어·자리 카드": player_cards,
+            "뱅커·딜러 카드": dealer_cards,
             "베팅액": h["total_stake"],
             "돌려받음": h["total_returned"],
             "손익": h["net"],

@@ -28,9 +28,9 @@ def test_summary_matches_wallet():
 def test_by_bet_splits_stakes():
     _, history = play(20, {Bet.PLAYER: 5_000, Bet.PLAYER_PAIR: 1_000})
     per = {r["bet"]: r for r in by_bet(history)}
-    assert set(per) == {"플레이어", "P 페어"}
-    assert per["플레이어"]["stake"] == 100_000
-    assert per["P 페어"]["count"] == 20
+    assert set(per) == {"바카라 플레이어", "바카라 P 페어"}
+    assert per["바카라 플레이어"]["stake"] == 100_000
+    assert per["바카라 P 페어"]["count"] == 20
     assert sum(r["net"] for r in per.values()) == summarize(history)["net"]
 
 
@@ -39,9 +39,33 @@ def test_rows_newest_first_and_text():
     r = rows(history)
     assert [x["판"] for x in r] == [3, 2, 1]
     assert r[0]["베팅"] == "뱅커 1,000"
-    assert any(s in r[0]["플레이어 카드"] for s in "♠♥♦♣")
+    assert r[0]["게임"] == "바카라"
+    assert any(s in r[0]["플레이어·자리 카드"] for s in "♠♥♦♣")
 
 
 def test_empty_history():
     assert summarize([])["rounds"] == 0
     assert by_bet([]) == [] and rows([]) == []
+
+
+def test_blackjack_records_mix_with_baccarat():
+    import random as _r
+
+    from bj.game import BJTable, Phase
+
+    _, history = play(3, {Bet.BANKER: 1_000})
+    t = BJTable(SessionWallet({}, initial=10_000_000), rng=_r.Random(5))
+    for i in range(10):
+        t.start_round({0: {"main": 1_000, "pp": 1_000}, 2: {"main": 2_000}})
+        if t.phase is Phase.INSURANCE:
+            t.insure({})
+        while t.phase is Phase.PLAYER:
+            t.act("stand")
+        history.append({**t.round_record(), "no": len(history) + 1, "time": "00:00:00", "shoe": t.shoe_no})
+    per = {r["bet"]: r for r in by_bet(history)}
+    assert {"바카라 뱅커", "블랙잭 메인", "블랙잭 퍼펙트 페어"} <= set(per)
+    assert per["블랙잭 퍼펙트 페어"]["count"] == 10
+    assert sum(r["net"] for r in per.values()) == summarize(history)["net"]
+    top = rows(history)[0]
+    assert top["게임"] == "블랙잭" and top["결과"].startswith("딜러")
+    assert "1번:" in top["플레이어·자리 카드"] and "3번:" in top["플레이어·자리 카드"]
