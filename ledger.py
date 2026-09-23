@@ -5,6 +5,7 @@
      "total_stake", "total_returned", "net", "balance_after"}
 - 바카라: "result" (engine.rules.RoundResult.to_dict)
 - 블랙잭: "dealer", "seats" (bj.game.BJTable.round_record)
+- 비행기: "crash", "cashouts", "fair" (crash.game.CrashTable.round_record)
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from engine.bets import BET_LABELS, Bet
 
 SUIT_SYMBOL = {"S": "♠", "H": "♥", "D": "♦", "C": "♣"}
 WINNER_TEXT = {"P": "플레이어", "B": "뱅커", "T": "타이"}
-GAME_TEXT = {"baccarat": "바카라", "blackjack": "블랙잭"}
+GAME_TEXT = {"baccarat": "바카라", "blackjack": "블랙잭", "crash": "비행기"}
 BJ_RESULT_TEXT = {"blackjack": "블랙잭", "win": "승", "lose": "패", "push": "푸시", "surrender": "서렌더"}
 
 # 베팅 종류 이름표 (표시 순서도 이 순서)
@@ -22,6 +23,8 @@ LABELS = {
     "bj_pp": "블랙잭 퍼펙트 페어",
     "bj_213": "블랙잭 21+3",
     "bj_ins": "블랙잭 인슈어런스",
+    "crash_1": "비행기 베팅 1",
+    "crash_2": "비행기 베팅 2",
 }
 ORDER = list(LABELS)
 
@@ -79,7 +82,7 @@ def cards_text(cards: list[dict]) -> str:
 
 
 def bets_text(bets: dict[str, int]) -> str:
-    return " · ".join(f"{LABELS.get(k, k).removeprefix('바카라 ').removeprefix('블랙잭 ')} {v:,}"
+    return " · ".join(f"{LABELS.get(k, k).removeprefix('바카라 ').removeprefix('블랙잭 ').removeprefix('비행기 ')} {v:,}"
                       for k, v in bets.items())
 
 
@@ -91,6 +94,9 @@ def _bj_hand_value(cards: list[dict]) -> int:
 
 def _describe(h: dict) -> tuple[str, str, str]:
     """(결과, 플레이어·자리 카드, 뱅커·딜러 카드)."""
+    if game_of(h) == "crash":
+        parts = [f"{p}번 {m:.2f}x 멈춤" if m else f"{p}번 추락" for p, m in sorted(h["cashouts"].items())]
+        return f"추락 {h['crash']:.2f}x · {', '.join(parts)}", "", ""
     if game_of(h) == "baccarat":
         r = h["result"]
         return (f"{WINNER_TEXT[r['winner']]} {r['player_total']}:{r['banker_total']}",
@@ -116,7 +122,7 @@ def rows(history: list[dict]) -> list[dict]:
             "판": h["no"],
             "시각": h["time"],
             "게임": GAME_TEXT[game_of(h)],
-            "슈": f"{h['shoe']}-{h['round_no']}",
+            "슈": f"#{h['round_no']}" if game_of(h) == "crash" else f"{h['shoe']}-{h['round_no']}",
             "베팅": bets_text(h["bets"]),
             "결과": result,
             "플레이어·자리 카드": player_cards,

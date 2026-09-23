@@ -69,3 +69,20 @@ def test_blackjack_records_mix_with_baccarat():
     top = rows(history)[0]
     assert top["게임"] == "블랙잭" and top["결과"].startswith("딜러")
     assert "1번:" in top["플레이어·자리 카드"] and "3번:" in top["플레이어·자리 카드"]
+
+
+def test_crash_records():
+    from crash.game import CrashTable
+
+    t = CrashTable(SessionWallet({}, initial=1_000_000))
+    history = []
+    for i in range(5):
+        t.start({1: {"stake": 10_000, "auto": 1.5}, 2: {"stake": 5_000}}, now=0)
+        rnd = t.finish()
+        history.append({**t.round_record(rnd), "no": i + 1, "time": "00:00:00", "shoe": "비행"})
+    per = {r["bet"]: r for r in by_bet(history)}
+    assert set(per) == {"비행기 베팅 1", "비행기 베팅 2"}
+    assert per["비행기 베팅 2"]["wins"] == 0  # 멈추지 않은 패널은 잃는다
+    assert sum(r["net"] for r in per.values()) == summarize(history)["net"] == t.wallet.balance - 1_000_000
+    top = rows(history)[0]
+    assert top["게임"] == "비행기" and top["결과"].startswith("추락") and top["슈"] == "#5"
