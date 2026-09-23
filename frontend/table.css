@@ -35,16 +35,38 @@
   font-family: var(--serif);
   user-select: none;
   -webkit-user-select: none;
-  overflow: hidden;
+  /* hidden 대신 clip: 둥근 모서리는 그대로 자르면서, 아래 컨트롤 바의 sticky 고정은 막지 않는다 */
+  overflow: clip;
 }
 .bt-root button { font: inherit; cursor: pointer; }
 
 /* ── 무대 (딜러 장면) ─────────────────────── */
 .bt-stage {
   position: relative;
-  /* 딜러 이미지 비율(1674:560)을 따르되 너무 낮아지지 않게. aspect-ratio + min-height는 폭을 늘려버려서 쓰지 않는다 */
-  height: max(170px, 33.4cqw);
-  background: #140c08 var(--stage-img, none) center top / cover no-repeat;
+  /* 폭의 1/3 높이를 따르되, 넓은 화면에서는 250px에서 멈춰 칩·딜 버튼이 한 화면에 들어오게 한다 */
+  height: clamp(170px, 33.4cqw, 250px);
+  background: #140c08;
+  overflow: hidden;
+}
+.bt-stage::before {
+  /* 영상 양옆 빈 곳: 같은 장면을 흐리게 깔아 채운다 */
+  content: "";
+  position: absolute;
+  inset: -40px;
+  background: var(--stage-img, none) center / cover no-repeat;
+  filter: blur(24px) brightness(.45) saturate(1.1);
+}
+/* 딜러 영상 영역: 원본 비율(1366:456) 그대로 가운데. 좁은 화면에서는 무대보다 넓어져 양옆이 잘린다 */
+.bt-screen {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 100%;
+  aspect-ratio: 1366 / 456;
+  translate: -50% 0;
+  background: var(--stage-img, none) center top / cover no-repeat;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 5%, #000 95%, transparent);
 }
 /* 딜러 영상: 평소엔 숨겨 두고(첫 프레임 = 배경 정지 화면), 공개 연출 동안만 보인다 */
 .bt-video {
@@ -141,7 +163,7 @@
 /* ── 붉은 펠트 테이블 ─────────────────────── */
 .bt-felt {
   position: relative;
-  padding: 10px 18px 46px;
+  padding: 8px 18px 40px;
   background: radial-gradient(ellipse 90% 80% at 50% 0%, #a3231a, var(--felt) 45%, var(--felt-dk) 100%);
   border-bottom: 12px solid #1c1411;
   border-radius: 0 0 50% 50% / 0 0 44px 44px;
@@ -187,7 +209,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
-  min-height: 176px;
+  min-height: 158px;
 }
 .bt-hand {
   min-width: 0;
@@ -366,7 +388,7 @@
   background: rgba(0, 0, 0, .18);
   transition: background .15s, box-shadow .2s, transform .08s;
 }
-.bt-row.main .bt-spot { min-height: 88px; }
+.bt-row.main .bt-spot { min-height: 76px; }
 .bt-spot:hover { background: rgba(241, 215, 146, .1); }
 .bt-spot:active { transform: scale(.985); }
 .bt-spot .en { font-family: var(--display); font-size: 11px; letter-spacing: .3em; color: var(--gold); }
@@ -435,22 +457,58 @@
 
 /* ── 컨트롤 바 ───────────────────────────── */
 .bt-controls {
+  /* 스크롤과 상관없이 칩·딜 버튼이 항상 화면 아래에 보이도록 고정 */
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: 8px 14px;
   align-items: center;
   justify-content: space-between;
   margin: 12px 12px 0;
-  padding: 12px 14px;
+  padding: 8px 12px;
   background: linear-gradient(var(--lacquer2), var(--lacquer));
   border: 1px solid var(--gold-lo);
   border-radius: 10px;
-  box-shadow: inset 0 1px 0 rgba(241, 215, 146, .15);
+  box-shadow: inset 0 1px 0 rgba(241, 215, 146, .15), 0 -10px 24px rgba(0, 0, 0, .55);
 }
-.bt-chiptray { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 7px; }
-.bt-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+/* 단축키 표시: 버튼·칩·베팅 칸에 작게 붙인다 (키보드가 있는 넓은 화면에서만) */
+.bt-root kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 3px;
+  border: 1px solid var(--gold-lo);
+  background: rgba(0, 0, 0, .4);
+  color: var(--gold-hi);
+  font: 600 10px/1.5 var(--display);
+  text-align: center;
+}
+.bt-root kbd.spot-key { position: absolute; top: 5px; right: 6px; margin: 0; }
+.bt-chiptray .bt-chip[data-key]::after {
+  content: attr(data-key);
+  position: absolute;
+  top: -5px;
+  left: -3px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 3px;
+  border: 1px solid var(--gold-lo);
+  background: #120d0a;
+  color: var(--gold-hi);
+  font: 600 9px/1.5 var(--display);
+  text-shadow: none;
+}
+@media (hover: none) {
+  .bt-root kbd, .bt-chiptray .bt-chip[data-key]::after { display: none; }
+}
+.bt-chiptray { display: flex; gap: 6px; flex-wrap: wrap; padding-top: 7px; }
+.bt-chiptray .bt-chip { width: 42px; height: 42px; font-size: 10px; }
+.bt-actions { display: flex; gap: 5px; flex-wrap: wrap; }
 .bt-actions button, .bt-overlay button {
-  padding: 8px 14px;
+  padding: 7px 10px;
   border-radius: 6px;
   border: 1px solid var(--gold-lo);
   background: rgba(0, 0, 0, .35);
@@ -617,6 +675,7 @@
 @container bt (max-width: 720px) {
   .bt-root { --cell: 18px; --small: 10px; --card-w: 46px; --card-h: 71px; }
   .bt-stage { height: max(150px, 33.4cqw); }
+  .bt-root kbd, .bt-chiptray .bt-chip[data-key]::after { display: none; }
   .bt-top { gap: 12px; padding: 8px 10px 20px; }
   .bt-kv b { font-size: 15px; }
   .bt-live { top: 48px; left: 10px; }
@@ -644,4 +703,16 @@
   .bt-cards { gap: 2px; }
   .bt-live { display: none; }
   .bt-hand-head .name { font-size: 11px; letter-spacing: .06em; }
+}
+
+/* 좁은 화면의 아래 고정 바: 칩은 한 줄(옆으로 밀어서 넘김), 버튼도 한 줄 → 두 줄 높이로 */
+@container bt (max-width: 720px) {
+  .bt-controls { padding: 4px 6px 6px; gap: 4px; margin: 8px 6px 0; }
+  .bt-chiptray { flex-wrap: nowrap; overflow-x: auto; width: 100%; gap: 5px; padding: 8px 2px 2px; scrollbar-width: none; }
+  .bt-chiptray::-webkit-scrollbar { display: none; }
+  .bt-chiptray .bt-chip { width: 36px; height: 36px; font-size: 9px; }
+  .bt-chiptray .bt-chip.sel { transform: translateY(-4px) scale(1.06); }
+  .bt-actions { width: 100%; flex-wrap: nowrap; gap: 4px; }
+  .bt-actions button { flex: 1; min-width: 0; padding: 7px 2px; font-size: 12px; white-space: nowrap; }
+  .bt-root .bt-actions button.primary { min-width: 0; flex: 1.3; }
 }

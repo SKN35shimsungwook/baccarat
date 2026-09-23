@@ -148,7 +148,7 @@ function placeHeld(s, meta, track, t) {
     el.style.opacity = "0";
     return;
   }
-  const r = s.els.stage.getBoundingClientRect();
+  const r = s.els.screen.getBoundingClientRect(); // 영상 영역 기준 (무대 양옆 여백 제외)
   const scale = Math.max(r.width / meta.width, r.height / meta.height);
   const ox = (r.width - meta.width * scale) / 2;
   const [x, y, w, h] = box;
@@ -179,4 +179,31 @@ function toast(s, msg) {
   t.classList.add("show");
   clearTimeout(s.toastHandle);
   s.toastHandle = setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+// ── 단축키 ──────────────────────────────────────────────────────────
+// 문서 전체에 하나만 건다 (페이지를 옮기거나 다시 마운트되면 새 핸들러로 교체).
+// 한글 입력 상태에서도 되도록 e.key 대신 키 위치(e.code: "KeyH", "Digit1", "Space")를 쓴다.
+function bindKeys(s, onKey) {
+  if (window.__casinoKeys) document.removeEventListener("keydown", window.__casinoKeys);
+  const handler = (e) => {
+    if (!s.root.isConnected || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    const t = e.composedPath()[0];
+    if (t && (["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName) || t.isContentEditable)) return;
+    if (onKey(e.code) === true) e.preventDefault(); // Space로 페이지가 스크롤되거나 포커스된 버튼이 눌리지 않게
+  };
+  window.__casinoKeys = handler;
+  document.addEventListener("keydown", handler);
+}
+
+// "Digit3" / "Numpad3" → 칩 트레이의 3번째 칩
+function chipFromKey(s, code) {
+  const m = /^(?:Digit|Numpad)([1-9])$/.exec(code);
+  if (!m) return false;
+  const v = s.data.chips[Number(m[1]) - 1];
+  if (v) {
+    s.chip = v;
+    updateChipTray(s);
+  }
+  return true;
 }

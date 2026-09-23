@@ -1,6 +1,6 @@
 /* 블랙잭 전용 스타일. table.css(펠트·카드·칩·무대) 뒤에 이어 붙는다. */
 
-.bj .bt-felt { padding: 12px 16px 48px; }
+.bj .bt-felt { padding: 8px 16px 36px; }
 
 /* ── 카운트 표시 ───────────────────────── */
 .bj-count {
@@ -29,20 +29,20 @@
 .bj-rules {
   text-align: center;
   font-family: var(--display);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: .2em;
   color: var(--gold);
   text-shadow: 0 1px 0 rgba(0, 0, 0, .6);
-  margin-top: 8px;
+  margin-top: 4px;
 }
 .bj-rules.sub {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .14em;
   color: rgba(212, 175, 95, .85);
-  margin: 2px auto 10px;
-  padding-bottom: 8px;
+  margin: 2px auto 6px;
+  padding-bottom: 6px;
   max-width: 620px;
   border-bottom: 1px solid rgba(212, 175, 95, .4);
 }
@@ -87,8 +87,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 8px 4px 10px;
+  gap: 6px;
+  padding: 6px 4px 6px;
   border-radius: 12px;
   border: 1px solid rgba(212, 175, 95, .25);
   background: rgba(0, 0, 0, .14);
@@ -100,7 +100,7 @@
   gap: 8px;
   justify-content: center;
   align-items: flex-end;
-  min-height: calc(var(--card-h) + 40px);
+  min-height: calc(var(--card-h) + 30px);
   max-width: 100%;
 }
 .bj-hand {
@@ -142,13 +142,13 @@
   transition: background .15s, box-shadow .2s;
 }
 .bj-spot:hover { background: rgba(241, 215, 146, .1); }
-.bj-spot.main { width: 76px; height: 76px; font-family: var(--display); font-size: 24px; color: var(--gold); }
+.bj-spot.main { width: 66px; height: 66px; font-family: var(--display); font-size: 22px; color: var(--gold); }
 .bj-spot.side { width: 48px; height: 48px; font-size: 12px; line-height: 1.1; text-align: center; font-weight: 700; font-family: var(--display); }
 .bj-spot .stack { position: absolute; bottom: -8px; left: 50%; translate: -50% 0; }
 .bj-spot.side .stack { bottom: -12px; }
 .bj-spot.won { border-color: var(--gold-hi); box-shadow: 0 0 0 1px var(--gold-hi), 0 0 18px rgba(241, 215, 146, .55); }
 .bj-seat-net {
-  min-height: 20px;
+  min-height: 18px;
   font-family: var(--display);
   font-size: 13px;
   font-weight: 700;
@@ -160,8 +160,8 @@
 .bj-play { display: none; gap: 6px; flex-wrap: wrap; }
 .bj-play.show { display: flex; }
 .bj-play button {
-  min-width: 76px;
-  padding: 10px 14px;
+  min-width: 70px;
+  padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid var(--gold);
   background: linear-gradient(#2a1f18, #150f0b);

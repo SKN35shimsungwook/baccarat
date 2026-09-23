@@ -32,6 +32,8 @@ export default function (component) {
     }
     STATE.set(parentElement, s);
     bind(s);
+    bindKeys(s, (code) => onKey(s, code));
+    showKeyHints(s);
   }
   s.data = data;
   s.trigger = setTriggerValue;
@@ -105,6 +107,36 @@ function bind(s) {
     clearTable(s);
     s.trigger("new_shoe", Date.now());
   };
+}
+
+// 단축키를 버튼·베팅 칸에 작게 표시한다
+const ACTION_KEYS = { undo: "Z", clear: "C", double: "X", rebet: "R", deal: "Space", reveal: "Space" };
+const SPOT_KEYS = { player: "P", banker: "B", tie: "T" };
+
+function showKeyHints(s) {
+  Object.entries(ACTION_KEYS).forEach(([act, k]) => s.actions[act]?.insertAdjacentHTML("beforeend", ` <kbd>${k}</kbd>`));
+  Object.entries(SPOT_KEYS).forEach(([bet, k]) => s.spots[bet].insertAdjacentHTML("beforeend", `<kbd class="spot-key">${k}</kbd>`));
+}
+
+function onKey(s, code) {
+  if (chipFromKey(s, code)) return true;
+  const click = (btn) => (btn.click(), true); // 비활성 버튼은 click()이 무시된다
+  switch (code) {
+    case "KeyP": placeChip(s, "player"); return true;
+    case "KeyB": placeChip(s, "banker"); return true;
+    case "KeyT": placeChip(s, "tie"); return true;
+    case "Space":
+    case "Enter":
+      if (s.phase === "animating") return click(s.actions.reveal);
+      deal(s);
+      return true;
+    case "KeyZ":
+    case "Backspace": return click(s.actions.undo);
+    case "KeyR": return click(s.actions.rebet);
+    case "KeyX": return click(s.actions.double);
+    case "KeyC": return click(s.actions.clear);
+  }
+  return false;
 }
 
 function canBet(s) {
@@ -440,6 +472,7 @@ function buildChipTray(s) {
     s.data.chips.forEach((v) => {
       const chip = makeChip(v, short(v));
       chip.dataset.v = v;
+      chip.dataset.key = tray.childElementCount + 1; // 숫자 키 표시
       chip.onclick = () => {
         s.chip = v;
         updateChipTray(s);

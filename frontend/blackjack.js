@@ -24,6 +24,7 @@ export default function (component) {
     STATE.set(parentElement, s);
     buildSeats(s);
     bind(s);
+    bindKeys(s, (code) => onKey(s, code));
   }
   s.data = data;
   s.trigger = setTriggerValue;
@@ -65,7 +66,7 @@ function buildSeats(s) {
       `<div class="bj-hands"></div>` +
       `<div class="bj-spots">` +
       `<button class="bj-spot side" data-key="pp" title="퍼펙트 페어">PP</button>` +
-      `<button class="bj-spot main" data-key="main" title="${i + 1}번 자리 메인 베팅">${i + 1}</button>` +
+      `<button class="bj-spot main" data-key="main" title="${i + 1}번 자리 메인 베팅">${i + 1}<kbd class="spot-key">${SEAT_KEY_LABEL[i]}</kbd></button>` +
       `<button class="bj-spot side" data-key="t213" title="21+3">21+3</button>` +
       `</div><div class="bj-seat-net later"></div>`;
     seat.querySelectorAll(".bj-spot").forEach((b) => (b.onclick = () => placeChip(s, i, b.dataset.key)));
@@ -102,7 +103,52 @@ function bind(s) {
     applyBets(s, s.lastBets);
   };
   a.deal.onclick = () => deal(s);
-  Object.entries(s.plays).forEach(([act, btn]) => (btn.onclick = () => play(s, act)));
+  Object.entries(ACTION_KEYS).forEach(([act, k]) => a[act].insertAdjacentHTML("beforeend", ` <kbd>${k}</kbd>`));
+  Object.entries(s.plays).forEach(([act, btn]) => {
+    btn.onclick = () => play(s, act);
+    btn.insertAdjacentHTML("beforeend", ` <kbd>${PLAY_KEY_LABEL[act]}</kbd>`);
+  });
+}
+
+const PLAY_KEYS = { KeyH: "hit", KeyS: "stand", KeyD: "double", KeyP: "split", KeyR: "surrender" };
+const PLAY_KEY_LABEL = { hit: "H", stand: "S", double: "D", split: "P", surrender: "R" };
+const SEAT_KEYS = { KeyQ: 0, KeyW: 1, KeyE: 2 };
+const ACTION_KEYS = { undo: "Z", clear: "C", x2: "X", rebet: "R", deal: "Space" };
+const SEAT_KEY_LABEL = ["Q", "W", "E"];
+
+function onKey(s, code) {
+  const view = s.data.view;
+  const click = (btn) => (btn.click(), true); // 비활성 버튼은 click()이 무시된다
+  if (s.ui === "round" && view.phase === "player") {
+    if (PLAY_KEYS[code]) {
+      play(s, PLAY_KEYS[code]);
+      return true;
+    }
+    return false;
+  }
+  if (s.ui === "round" && view.phase === "insurance") {
+    if (code === "KeyY" || code === "KeyN" || code === "Enter" || code === "Space") {
+      Object.keys(view.insurance_cost || {}).forEach((seat) => (s.insurance[seat] = code === "KeyY"));
+      sendInsurance(s);
+      return true;
+    }
+    return false;
+  }
+  if (chipFromKey(s, code)) return true;
+  if (code in SEAT_KEYS) {
+    placeChip(s, SEAT_KEYS[code], "main");
+    return true;
+  }
+  switch (code) {
+    case "Space":
+    case "Enter": deal(s); return true;
+    case "KeyZ":
+    case "Backspace": return click(s.actions.undo);
+    case "KeyR": return click(s.actions.rebet);
+    case "KeyX": return click(s.actions.x2);
+    case "KeyC": return click(s.actions.clear);
+  }
+  return false;
 }
 
 const betTotal = (bets) => Object.values(bets).reduce((t, b) => t + sum(b), 0);
@@ -506,7 +552,7 @@ function renderInsurance(s, show) {
   });
   const ok = document.createElement("button");
   ok.className = "primary";
-  ok.textContent = "확인";
+  ok.innerHTML = "확인 <kbd>Enter</kbd>";
   ok.onclick = () => sendInsurance(s);
   box.appendChild(ok);
 }
@@ -528,6 +574,7 @@ function buildChipTray(s) {
     s.data.chips.forEach((v) => {
       const chip = makeChip(v, short(v));
       chip.dataset.v = v;
+      chip.dataset.key = tray.childElementCount + 1; // 숫자 키 표시
       chip.onclick = () => {
         s.chip = v;
         updateChipTray(s);
