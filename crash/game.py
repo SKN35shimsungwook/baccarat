@@ -21,7 +21,7 @@ from wallet import Wallet
 
 K = 0.085                 # 배당 상승 속도 (1/초)
 MAX_MULTIPLIER = 1000.0   # 이 배당에 닿으면 강제 추락
-PANELS = (1, 2)           # 한 판에 베팅 2개
+PANELS = (1,)             # 한 판에 베팅 1개
 LATENCY_GRACE = 0.35      # 멈추기 요청이 서버에 닿기까지의 여유(초)
 
 
@@ -71,7 +71,7 @@ class Bet:
 @dataclass
 class CrashTable:
     wallet: Wallet
-    rtp: float = 0.50   # 환수율 50%: 판의 약 절반은 1.00x에서 바로 추락
+    rtp: float = 0.50   # 환수율 50%: 판의 약 절반은 1.00x에서 바로 추락 (고배당은 드물게: 10x 이상 5%, 100x 이상 0.5%)
     min_bet: int = 1_000
     max_bet: int = 1_000_000
     client_seed: str = field(default_factory=lambda: secrets.token_hex(8))
@@ -132,7 +132,8 @@ class CrashTable:
         bet = self.bets.get(int(panel))
         if not bet or bet.cashed_at is not None:
             raise CrashError("멈출 베팅이 없습니다.")
-        m = math.floor(float(claimed) * 100) / 100
+        # 2.05 * 100 = 204.999… 같은 소수 오차로 0.01이 깎이지 않게, 먼저 둘째 자리 근처에서 반올림한 뒤 내림
+        m = math.floor(round(float(claimed) * 100, 6)) / 100
         if m < 1.00:
             raise CrashError("잘못된 배당입니다.")
         if bet.auto is not None and bet.auto <= m:

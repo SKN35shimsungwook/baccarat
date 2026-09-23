@@ -1,14 +1,15 @@
 // 비행기(크래시) 게임 화면 (Streamlit Custom Component v2). common.js 뒤에 이어 붙는다.
 // - 파이썬(crash/game.py)이 추락 지점을 정하고 멈추기를 검증한다. 화면은 canvas로 비행을 그린다.
-// - JS → 파이썬: setTriggerValue("start" | "cashout1" | "cashout2" | "finish")
+// - JS → 파이썬: setTriggerValue("start" | "cashout1" | "finish")
 // - 배당 m(t) = e^(k·t). 추락 지점은 판 시작 때 data.view.crash 로 받는다(사용자가 고른 방식).
+// - 베팅은 한 칸. 큰 버튼 하나가 상황에 따라 이륙 → 멈추기 → 결과로 바뀐다.
 
 const STATE = new WeakMap();
 const QUICK = [1_000, 5_000, 10_000, 50_000, 100_000];
 const BALLOONS = [1.5, 2, 3, 5, 10, 20, 50, 100, 250, 500];
 const BALLOON_COLORS = ["#e8453c", "#6cc04a", "#f2c21b", "#8e5bd8", "#2f8fe0"];
-const CASH_KEYS = { 1: "A", 2: "L" };
-const RESULT_HOLD = 3000; // 추락 후 결과를 보여 주는 시간(ms)
+const PANEL = 1;          // 파이썬 쪽 베팅 칸 번호
+const RESULT_HOLD = 3000; // 판이 끝난 뒤 결과를 보여 주는 시간(ms)
 
 export default function (component) {
   const { data, parentElement, setTriggerValue } = component;
@@ -21,12 +22,11 @@ export default function (component) {
     s = createState(root);
     if (prev) {
       prev.alive = false;
-      Object.assign(s, { panels: prev.panels });
+      s.bet = prev.bet;
     }
     STATE.set(parentElement, s);
-    buildPanels(s);
+    buildPanel(s);
     bindKeys(s, (code) => onKey(s, code));
-    s.els.takeoff.onclick = () => takeoff(s);
     requestAnimationFrame((t) => frame(s, t));
   }
   s.data = data;
@@ -41,12 +41,8 @@ function createState(root) {
   return {
     root, els, alive: true,
     ui: "betting",            // betting | waiting | flying | crashed
-    panels: {
-      1: { on: true, stake: 10_000, auto: false, target: 2.0 },
-      2: { on: false, stake: 10_000, auto: true, target: 1.5 },
-    },
-    round: null,              // {nonce, crash, k, t0, crashT, cashed: {1: m}, finishing}
-    lastNonce: null,
+    bet: { stake: 10_000, auto: false, target: 2.0 },
+    round: null,              // {nonce, crash, k, t0, crashT, stake, auto, cashed, pending, ...}
     lastErrorId: null,
     lastRecentNonce: null,
     trail: [],
@@ -65,139 +61,137 @@ function makeClouds() {
   return out;
 }
 
-// ── 베팅 패널 ───────────────────────────────────────────────────────
-function buildPanels(s) {
-  s.panelEls = {};
-  s.root.querySelectorAll(".cr-panel").forEach((el) => {
-    const p = Number(el.dataset.panel);
-    el.innerHTML =
-      `<div class="cr-head"><span>베팅 ${p}</span><span class="cr-state"></span></div>` +
-      `<div class="cr-amount"><button data-a="-">−</button><input data-a="amount" inputmode="numeric"><button data-a="+">+</button></div>` +
-      `<div class="cr-quick">${QUICK.map((v) => `<button data-q="${v}">${short(v)}</button>`).join("")}</div>` +
-      `<label class="cr-auto"><input type="checkbox" data-a="auto"> 자동 멈춤 <input type="number" data-a="target" min="1.01" step="0.01"> x</label>` +
-      `<button class="cr-main" data-a="main"></button>`;
-    const q = (sel) => el.querySelector(sel);
-    const pan = () => s.panels[p];
-    const editable = () => s.ui === "betting" || s.ui === "crashed";
-    q('[data-a="-"]').onclick = () => editable() && setStake(s, p, pan().stake - step(pan().stake - 1));
-    q('[data-a="+"]').onclick = () => editable() && setStake(s, p, pan().stake + step(pan().stake));
-    q('[data-a="amount"]').onchange = (e) => setStake(s, p, Number(String(e.target.value).replace(/[^0-9]/g, "")));
-    el.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => editable() && setStake(s, p, Number(b.dataset.q))));
-    q('[data-a="auto"]').onchange = (e) => { pan().auto = e.target.checked; renderPanels(s); };
-    q('[data-a="target"]').onchange = (e) => {
-      pan().target = Math.max(1.01, Math.round(Number(e.target.value || 2) * 100) / 100);
-      renderPanels(s);
-    };
-    q('[data-a="main"]').onclick = () => panelMain(s, p);
-    s.panelEls[p] = { el, q };
-  });
+const editable = (s) => s.ui === "betting" || s.ui === "crashed";
+
+// ── 베팅 칸 + 큰 버튼 ───────────────────────────────────────────────
+function buildPanel(s) {
+  const el = s.root.querySelector(".cr-panel");
+  el.innerHTML =
+    `<div class="cr-head"><span>베팅 금액</span><span class="cr-state"></span></div>` +
+    `<div class="cr-amount"><button data-a="-">−</button><input data-a="amount" inputmode="numeric"><button data-a="+">+</button></div>` +
+    `<div class="cr-quick">${QUICK.map((v) => `<button data-q="${v}">${short(v)}</button>`).join("")}</div>` +
+    `<label class="cr-auto"><input type="checkbox" data-a="auto"> 자동 멈춤 <input type="number" data-a="target" min="1.01" step="0.01"> x</label>`;
+  const q = (sel) => el.querySelector(sel);
+  q('[data-a="-"]').onclick = () => editable(s) && setStake(s, s.bet.stake - step(s.bet.stake - 1));
+  q('[data-a="+"]').onclick = () => editable(s) && setStake(s, s.bet.stake + step(s.bet.stake));
+  q('[data-a="amount"]').onchange = (e) => setStake(s, Number(String(e.target.value).replace(/[^0-9]/g, "")));
+  el.querySelectorAll("[data-q]").forEach((b) => (b.onclick = () => editable(s) && setStake(s, Number(b.dataset.q))));
+  q('[data-a="auto"]').onchange = (e) => { s.bet.auto = e.target.checked; renderControls(s); };
+  q('[data-a="target"]').onchange = (e) => {
+    s.bet.target = Math.max(1.01, Math.round(Number(e.target.value || 2) * 100) / 100);
+    renderControls(s);
+  };
+  s.panel = { el, q };
+
+  // 큰 버튼은 한 번만 만들고, 이후에는 글자·색만 바꾼다 (통째로 다시 쓰면 누르는 순간 클릭이 사라질 수 있다)
+  const btn = s.els.action;
+  btn.innerHTML = `<span class="cr-a-main"></span><span class="cr-a-sub"></span><kbd>Space</kbd>`;
+  btn.onclick = () => action(s);
+  s.actionEls = { main: btn.querySelector(".cr-a-main"), sub: btn.querySelector(".cr-a-sub") };
 }
 
 function step(v) {
   return v < 10_000 ? 1_000 : v < 100_000 ? 10_000 : 100_000;
 }
 
-function setStake(s, p, v) {
+function setStake(s, v) {
   const r = s.data.rules;
-  s.panels[p].stake = Math.min(r.max, Math.max(r.min, Math.round(v / 1000) * 1000 || r.min));
-  renderPanels(s);
+  s.bet.stake = Math.min(r.max, Math.max(r.min, Math.round(v / 1000) * 1000 || r.min));
+  renderControls(s);
 }
 
-// 패널의 큰 버튼: 베팅 중엔 이번 판 참가 켜기/끄기, 비행 중엔 멈추기
-function panelMain(s, p) {
-  if (s.ui === "betting" || s.ui === "crashed") {
-    s.panels[p].on = !s.panels[p].on;
-    renderPanels(s);
-  } else if (s.ui === "flying") {
-    cashOut(s, p);
-  }
+// 큰 버튼: 베팅 중엔 이륙, 비행 중엔 멈추기
+function action(s) {
+  if (editable(s)) takeoff(s);
+  else if (s.ui === "flying") cashOut(s);
 }
 
-function renderPanels(s) {
+function setAction(s, cls, main, sub, disabled) {
+  const btn = s.els.action;
+  const name = `cr-action ${cls}`;
+  if (btn.className !== name) btn.className = name;
+  if (s.actionEls.main.textContent !== main) s.actionEls.main.textContent = main;
+  if (s.actionEls.sub.textContent !== sub) s.actionEls.sub.textContent = sub;
+  if (btn.disabled !== disabled) btn.disabled = disabled;
+}
+
+function renderControls(s) {
+  const { q } = s.panel;
   const r = s.round;
-  const flying = s.ui === "flying";
-  const m = flying ? currentMultiplier(s) : 1;
-  let total = 0;
-  Object.entries(s.panelEls).forEach(([key, { el, q }]) => {
-    const p = Number(key);
-    const pan = s.panels[p];
-    const bet = r && r.bets[p];
-    const editable = s.ui === "betting" || s.ui === "crashed";
-    const amount = q('[data-a="amount"]');
-    if (s.root.querySelector(":focus") !== amount && el.getRootNode().activeElement !== amount) amount.value = fmt(pan.stake);
-    amount.disabled = !editable;
-    q('[data-a="-"]').disabled = q('[data-a="+"]').disabled = !editable;
-    el.querySelectorAll("[data-q]").forEach((b) => (b.disabled = !editable));
-    const auto = q('[data-a="auto"]');
-    auto.checked = pan.auto;
-    auto.disabled = !editable;
-    const target = q('[data-a="target"]');
-    if (el.getRootNode().activeElement !== target) target.value = pan.target.toFixed(2);
-    target.disabled = !editable || !pan.auto;
+  const canEdit = editable(s);
+  const amount = q('[data-a="amount"]');
+  const active = s.root.getRootNode().activeElement;
+  if (active !== amount) amount.value = fmt(s.bet.stake);
+  amount.disabled = !canEdit;
+  q('[data-a="-"]').disabled = q('[data-a="+"]').disabled = !canEdit;
+  s.panel.el.querySelectorAll("[data-q]").forEach((b) => (b.disabled = !canEdit));
+  const auto = q('[data-a="auto"]');
+  auto.checked = s.bet.auto;
+  auto.disabled = !canEdit;
+  const target = q('[data-a="target"]');
+  if (active !== target) target.value = s.bet.target.toFixed(2);
+  target.disabled = !canEdit || !s.bet.auto;
+  const autoTarget = r && !canEdit ? r.auto : s.bet.auto ? s.bet.target : null;
+  q(".cr-state").textContent = autoTarget ? `자동 멈춤 ${autoTarget.toFixed(2)}x` : "";
 
-    const main = q('[data-a="main"]');
-    const state = q(".cr-state");
-    main.className = "cr-main";
-    main.disabled = false;
-    state.textContent = "";
-    const showResult = s.ui === "crashed" && bet; // 추락 직후에는 이번 판 결과를 먼저 보여 준다
-    if (editable && !showResult) {
-      el.classList.toggle("off", !pan.on);
-      main.innerHTML = pan.on ? `이번 판 참가 ✓ <kbd>${CASH_KEYS[p]}</kbd>` : `참가 안 함 <kbd>${CASH_KEYS[p]}</kbd>`;
-      if (!pan.on) main.classList.add("off");
-      if (pan.on) total += pan.stake;
-    } else if (bet) {
-      total += bet.stake;
-      const cashed = r.cashed[p];
-      if (cashed) {
-        main.classList.add("done");
-        main.textContent = `멈춤 ${cashed.toFixed(2)}x · +${fmt(Math.floor(bet.stake * cashed))}`;
-        main.disabled = true;
-      } else if (s.ui === "crashed" || r.crashedShown) {
-        main.classList.add("lost");
-        main.textContent = `추락 · -${fmt(bet.stake)}`;
-        main.disabled = true;
-      } else {
-        main.classList.add("cash");
-        main.innerHTML = `멈추기 ${fmt(Math.floor(bet.stake * m))} <kbd>${CASH_KEYS[p]}</kbd>`;
-        main.disabled = s.ui !== "flying";
-      }
-      if (bet.auto) state.textContent = `자동 ${bet.auto.toFixed(2)}x`;
+  let stake = 0;
+  if (s.ui === "flying" && r) {
+    stake = r.stake;
+    if (r.cashed) {
+      setAction(s, "done", `멈춤 ${r.cashed.toFixed(2)}x`, `+${fmt(profitOf(r))}`, true);
+    } else if (r.crashedShown) {
+      setAction(s, "lost", "추락", `-${fmt(r.stake)}`, true);
     } else {
-      main.classList.add("off");
-      main.textContent = "이번 판 쉬는 중";
-      main.disabled = true;
+      const m = currentMultiplier(s);
+      setAction(s, "cash", "멈추기", fmt(Math.floor(r.stake * m)), false);
     }
-  });
-  s.els.totalbet.textContent = fmt(total);
-  s.els.takeoff.disabled = !(s.ui === "betting" || s.ui === "crashed");
+  } else if (s.ui === "crashed" && r) {
+    // 판이 끝난 직후: 내 결과를 보여 주되, 바로 다음 판을 시작할 수 있다
+    setAction(s, "go", "이륙", `베팅 ${fmt(s.bet.stake)}`, false);
+  } else if (s.ui === "waiting") {
+    setAction(s, "go", "이륙 중…", "", true);
+  } else {
+    stake = s.bet.stake;
+    setAction(s, "go", "이륙", `베팅 ${fmt(s.bet.stake)}`, false);
+  }
+  s.els.totalbet.textContent = fmt(stake);
 }
+
+const profitOf = (r) => Math.floor(r.stake * r.cashed) - r.stake;
 
 // ── 파이썬과 주고받기 ───────────────────────────────────────────────
 function takeoff(s) {
-  if (s.ui !== "betting" && s.ui !== "crashed") return;
-  const bets = {};
-  Object.entries(s.panels).forEach(([p, pan]) => {
-    if (pan.on) bets[p] = { stake: pan.stake, auto: pan.auto ? pan.target : null };
-  });
-  if (!Object.keys(bets).length) return toast(s, "베팅 패널을 하나 이상 켜세요.");
-  const total = Object.values(bets).reduce((t, b) => t + b.stake, 0);
-  if (total > s.data.balance) return toast(s, "칩이 부족합니다.");
+  if (!editable(s)) return;
+  if (s.bet.stake > s.data.balance) return toast(s, "칩이 부족합니다.");
   s.ui = "waiting";
   s.trail = [];
-  renderPanels(s);
-  s.trigger("start", { bets, nonce: Date.now() });
+  s.els.msg.textContent = "";
+  s.els.msg.className = "cr-msg";
+  renderControls(s);
+  s.trigger("start", {
+    bets: { [PANEL]: { stake: s.bet.stake, auto: s.bet.auto ? s.bet.target : null } },
+    nonce: Date.now(),
+  });
 }
 
-function cashOut(s, p) {
+// 멈추기 (수동이든 자동이든 같은 길로 파이썬에 보낸다 → 칩이 바로 지급된다)
+function cashOut(s, at) {
   const r = s.round;
-  if (s.ui !== "flying" || !r || !r.bets[p] || r.cashed[p]) return;
-  const m = Math.floor(currentMultiplier(s) * 100) / 100;
-  r.cashed[p] = m; // 화면에는 바로 반영하고, 파이썬이 거절하면 되돌린다
-  r.pending[p] = true;
-  addFloat(s, `+${fmt(Math.floor(r.bets[p].stake * m))}`, "good");
-  renderPanels(s);
-  s.trigger(`cashout${p}`, { m, nonce: Date.now() });
+  if (s.ui !== "flying" || !r || r.cashed || r.crashedShown) return;
+  // 파이썬과 같은 방식으로 둘째 자리 내림 (2.05 * 100 = 204.999… 오차로 0.01이 깎이지 않게)
+  const m = Math.floor(Number(((at || currentMultiplier(s)) * 100).toFixed(6))) / 100;
+  r.cashed = m; // 화면에는 바로 반영하고, 파이썬이 거절하면 되돌린다
+  r.pending = true;
+  addFloat(s, `+${fmt(profitOf(r))}`, "good");
+  showCashedMessage(s);
+  renderControls(s);
+  s.trigger(`cashout${PANEL}`, { m, nonce: Date.now() });
+}
+
+function showCashedMessage(s) {
+  const r = s.round;
+  s.els.msg.textContent = `${r.cashed.toFixed(2)}x에서 멈춤 · +${fmt(profitOf(r))}`;
+  s.els.msg.className = "cr-msg good";
 }
 
 function finishRound(s) {
@@ -216,20 +210,27 @@ function sync(s) {
     if (!first) toast(s, d.error.msg);
     if (s.ui === "waiting") s.ui = "betting";
     // 거절된 멈추기는 되돌린다
-    if (s.round) Object.keys(s.round.pending).forEach((p) => {
-      const conf = v.bets[p];
-      if (!conf || conf.cashed_at == null) delete s.round.cashed[p];
-      delete s.round.pending[p];
-    });
+    const r = s.round;
+    if (r && r.pending) {
+      const conf = v.bets[PANEL];
+      if (!conf || conf.cashed_at == null) {
+        r.cashed = null;
+        if (!r.crashedShown) {
+          s.els.msg.textContent = "";
+          s.els.msg.className = "cr-msg";
+        }
+      }
+      r.pending = false;
+    }
   }
 
   if (v.phase === "flying") {
     if (!s.round || s.round.nonce !== v.nonce) startRound(s, v);
-    // 파이썬이 확인한 멈춤 배당으로 맞춘다
-    Object.entries(v.bets).forEach(([p, b]) => {
-      if (b.cashed_at != null) s.round.cashed[p] = b.cashed_at;
-      delete s.round.pending[p];
-    });
+    const b = v.bets[PANEL];
+    if (b && b.cashed_at != null) {
+      s.round.cashed = b.cashed_at; // 파이썬이 확인한 멈춤 배당으로 맞춘다
+      s.round.pending = false;
+    }
   } else if (s.round && !s.round.done && v.last && v.last.nonce === s.round.nonce) {
     endRound(s, v.last);
   } else if (s.ui === "waiting") {
@@ -239,40 +240,52 @@ function sync(s) {
   renderRecent(s, v);
   renderFair(s, v);
   setBalance(s);
-  renderPanels(s);
+  renderControls(s);
   s.firstSync = false;
 }
 
 function startRound(s, v) {
   const now = performance.now();
-  const bets = {};
-  Object.entries(v.bets).forEach(([p, b]) => (bets[p] = b));
+  const b = v.bets[PANEL];
   s.round = {
     nonce: v.nonce, crash: v.crash, k: v.k,
     t0: now - (v.elapsed || 0) * 1000,   // 다른 페이지에 다녀오면 서버 기준 경과 시간부터 이어서
     crashT: Math.log(v.crash) / v.k,
-    bets, cashed: {}, pending: {}, finishing: false, done: false, crashedShown: false,
+    stake: b ? b.stake : 0, auto: b ? b.auto : null,
+    cashed: b && b.cashed_at != null ? b.cashed_at : null, pending: false,
+    finishing: false, done: false, crashedShown: false,
   };
   s.ui = "flying";
   s.trail = [];
   s.pops = [];
-  s.els.msg.textContent = "";
-  s.els.msg.className = "cr-msg";
-  // 창이 가려져 애니메이션이 멈춰도 판이 끝나도록
-  const left = Math.max(0, s.round.crashT * 1000 - (now - s.round.t0));
+  if (s.round.cashed) showCashedMessage(s);
+  else {
+    s.els.msg.textContent = "";
+    s.els.msg.className = "cr-msg";
+  }
+  // 창이 가려져 애니메이션이 멈춰도 자동 멈춤과 추락이 제때 처리되도록 타이머도 건다
+  const elapsed = now - s.round.t0;
   const nonce = v.nonce;
+  if (s.round.auto && s.round.auto <= v.crash) {
+    setTimeout(() => {
+      if (s.round && s.round.nonce === nonce) cashOut(s, s.round.auto);
+    }, Math.max(0, Math.log(s.round.auto) / v.k * 1000 - elapsed));
+  }
   setTimeout(() => {
     if (s.round && s.round.nonce === nonce && !s.round.crashedShown) crashNow(s);
-  }, left + 50);
+  }, Math.max(0, s.round.crashT * 1000 - elapsed) + 50);
 }
 
 function crashNow(s) {
   const r = s.round;
   r.crashedShown = true;
   r.crashAt = performance.now();
-  s.els.msg.textContent = `추락! ${r.crash.toFixed(2)}x`;
-  s.els.msg.className = "cr-msg bad";
-  renderPanels(s);
+  // 이미 멈췄으면 내 결과만 보여 준다 (추락 지점은 위쪽 기록 줄에만)
+  if (!r.cashed) {
+    s.els.msg.textContent = `추락! ${r.crash.toFixed(2)}x`;
+    s.els.msg.className = "cr-msg bad";
+  }
+  renderControls(s);
   finishRound(s);
 }
 
@@ -280,12 +293,13 @@ function endRound(s, last) {
   const r = s.round;
   r.done = true;
   if (!r.crashedShown) crashNow(s);
-  last.bets.forEach((b) => {
-    if (b.cashed_at != null) r.cashed[b.panel] = b.cashed_at;
-  });
-  const net = last.net;
-  s.els.msg.textContent = `추락 ${last.crash.toFixed(2)}x · ${net > 0 ? `+${fmt(net)}` : net < 0 ? `-${fmt(-net)}` : "본전"}`;
-  s.els.msg.className = `cr-msg ${net > 0 ? "good" : net < 0 ? "bad" : ""}`;
+  const b = last.bets.find((x) => x.panel === PANEL);
+  r.cashed = b && b.cashed_at != null ? b.cashed_at : null;
+  if (r.cashed) showCashedMessage(s);
+  else {
+    s.els.msg.textContent = `추락 ${last.crash.toFixed(2)}x · -${fmt(r.stake)}`;
+    s.els.msg.className = "cr-msg bad";
+  }
   s.ui = "crashed";
   const nonce = r.nonce;
   setTimeout(() => {
@@ -293,7 +307,7 @@ function endRound(s, last) {
       s.ui = "betting";
       s.els.msg.textContent = "";
       s.els.msg.className = "cr-msg";
-      renderPanels(s);
+      renderControls(s);
     }
   }, RESULT_HOLD);
 }
@@ -318,7 +332,6 @@ function renderRecent(s, v) {
   const box = s.els.recent;
   const newest = v.last ? v.last.nonce : null;
   if (newest === s.lastRecentNonce && box.childElementCount === v.recent.length) return;
-  // 비행 중에는 이번 판 결과를 아직 보여 주지 않는다
   box.innerHTML = v.recent
     .map((x, i) => `<span class="${x < 2 ? "low" : x < 10 ? "mid" : "high"}${i === 0 && s.lastRecentNonce !== null ? " fresh" : ""}">${x.toFixed(2)}x</span>`)
     .join("");
@@ -335,14 +348,12 @@ function addFloat(s, text, kind) {
   s.floats.push({ text, kind, t: performance.now() });
 }
 
-// ── 단축키 ──────────────────────────────────────────────────────────
+// ── 단축키: Space / Enter / A = 큰 버튼 (이륙 또는 멈추기) ──────────
 function onKey(s, code) {
-  if (code === "Space" || code === "Enter") {
-    takeoff(s);
+  if (code === "Space" || code === "Enter" || code === "KeyA") {
+    action(s);
     return true;
   }
-  if (code === "KeyA") { panelMain(s, 1); return true; }
-  if (code === "KeyL") { panelMain(s, 2); return true; }
   return false;
 }
 
@@ -369,15 +380,8 @@ function frame(s, now) {
   const showRound = r && (s.ui === "flying" || s.ui === "crashed" || s.ui === "waiting" && crashed);
   const m = showRound ? (crashed ? r.crash : Math.min(Math.exp(r.k * Math.max(0, t)), r.crash)) : 1;
 
-  // 자동 멈춤: 화면에 바로 보여 준다 (지급은 파이썬이 판 끝에 한다)
-  if (flying && !crashed) {
-    Object.entries(r.bets).forEach(([p, b]) => {
-      if (b.auto && !r.cashed[p] && m >= b.auto) {
-        r.cashed[p] = b.auto;
-        addFloat(s, `+${fmt(Math.floor(b.stake * b.auto))}`, "good");
-      }
-    });
-  }
+  // 자동 멈춤: 목표 배당에 닿으면 수동 멈추기와 똑같이 파이썬에 보낸다 (칩이 바로 지급된다)
+  if (flying && !crashed && r.auto && !r.cashed && m >= r.auto) cashOut(s, r.auto);
 
   // 월드 좌표: 고도 a = ln(m) · S. 비행기가 화면 높이의 42%까지 오르면 카메라가 따라 올라간다.
   const S = H * 0.55;
@@ -419,14 +423,16 @@ function frame(s, now) {
   if (crashed) drawSmoke(ctx, px, py, now, r.crashAt);
   drawFloats(s, ctx, px, py, now);
 
-  // 큰 배당 숫자
+  // 큰 배당 숫자: 멈췄으면 내가 멈춘 배당에서 고정 (비행기는 추락할 때까지 계속 난다)
   const mult = s.els.mult;
-  const text = `${m.toFixed(2)}x`;
+  const mine = showRound && r.cashed;
+  const text = `${(mine ? r.cashed : m).toFixed(2)}x`;
   if (mult.textContent !== text) mult.textContent = text;
-  mult.className = `cr-mult${!showRound ? " idle" : crashed ? " crashed" : ""}`;
-  if (flying && !crashed && now - (s.lastPanelPaint || 0) > 120) {
+  const cls = `cr-mult${!showRound ? " idle" : mine ? " cashed" : crashed ? " crashed" : ""}`;
+  if (mult.className !== cls) mult.className = cls;
+  if (flying && !crashed && !r.cashed && now - (s.lastPanelPaint || 0) > 100) {
     s.lastPanelPaint = now;
-    renderPanels(s);
+    renderControls(s); // 멈추기 버튼의 금액만 갱신
   }
   if (!showRound && !s.els.msg.textContent) {
     s.els.msg.textContent = "베팅하고 이륙하세요";

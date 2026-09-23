@@ -2,7 +2,7 @@
 """비행기(크래시) 게임 페이지.
 
 - 추락 지점과 정산은 crash/game.py 의 CrashTable 이 정한다. 화면(frontend/crash.*)은 canvas로 비행을 그린다.
-  JS → 파이썬: setTriggerValue("start" | "cashout1" | "cashout2" | "finish")
+  JS → 파이썬: setTriggerValue("start" | "cashout1" | "finish")
 - 배당 확률은 환수율에 비례한다: x배 이상 버틸 확률 = 환수율 ÷ x.
 - 판이 끝나면 st.session_state.history 에 기록을 남긴다 (베팅 기록 페이지에서 본다).
 """
@@ -60,10 +60,6 @@ def _cash_out(panel: int) -> None:
 
 def on_cashout1() -> None:
     _cash_out(1)
-
-
-def on_cashout2() -> None:
-    _cash_out(2)
 
 
 def on_finish() -> None:
@@ -127,7 +123,6 @@ _CRASH_COMPONENT(
     data=data,
     on_start_change=on_start,
     on_cashout1_change=on_cashout1,
-    on_cashout2_change=on_cashout2,
     on_finish_change=on_finish,
 )
 

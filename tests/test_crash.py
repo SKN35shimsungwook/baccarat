@@ -18,7 +18,7 @@ def test_growth_curve():
     assert time_at(10) == pytest.approx(27.09, abs=0.01)
 
 
-@pytest.mark.parametrize("rtp", [0.50, 0.95, 0.97, 0.99])
+@pytest.mark.parametrize("rtp", [0.50, 0.90, 0.97, 0.99])
 def test_survival_is_rtp_over_x(rtp):
     xs = samples(200_000, rtp)
     for target in (1.5, 2, 5, 10):
@@ -66,25 +66,32 @@ def test_cash_out_rules():
     assert t.finish()["net"] == -1_000
 
     t = CrashTable(SessionWallet({}, initial=100_000))
-    t.start({1: {"stake": 10_000}, 2: {"stake": 5_000, "auto": 1.5}}, now=0)
+    t.start({1: {"stake": 10_000}}, now=0)
     t.crash = 3.00  # 테스트용으로 고정
     with pytest.raises(CrashError, match="아직"):
         t.cash_out(1, 2.0, now=1.0)  # 1초 뒤에는 약 1.09x
-    paid = t.cash_out(1, 2.0, now=time_at(2.0))
+    paid = t.cash_out(1, 2.0, now=time_at(2.0))  # 2배 넘어서도 멈출 수 있다
     assert paid == 20_000
     with pytest.raises(CrashError, match="멈출 베팅"):
         t.cash_out(1, 2.5, now=time_at(2.5))
-    rnd = t.finish()  # 2번 패널은 자동 멈춤 1.5x
-    assert {b["panel"]: b["cashed_at"] for b in rnd["bets"]} == {1: 2.0, 2: 1.5}
-    assert rnd["returned"] == 20_000 + 7_500
-    assert t.wallet.balance == 100_000 - 15_000 + 27_500
+    rnd = t.finish()
+    assert rnd["bets"][0]["cashed_at"] == 2.0 and rnd["returned"] == 20_000
+    assert t.wallet.balance == 100_000 + 10_000
     assert t.phase is Phase.BETTING
+
+    # 자동 멈춤: 화면이 목표 배당에서 보낸 멈추기를 그 배당으로 지급 (나중에 온 요청도 목표 배당으로)
+    t.start({1: {"stake": 10_000, "auto": 1.5}}, now=100)
+    t.crash = 4.00
+    assert t.cash_out(1, 1.62, now=100 + time_at(1.62)) == 15_000
+    t.finish()
+    with pytest.raises(CrashError, match="없는 베팅 패널"):  # 베팅 칸은 하나
+        t.start({2: {"stake": 1_000}})
 
 
 def test_auto_above_crash_loses_and_validation():
     t = CrashTable(SessionWallet({}, initial=5_000))
     with pytest.raises(CrashError, match="칩이 부족"):
-        t.start({1: {"stake": 3_000}, 2: {"stake": 3_000}})
+        t.start({1: {"stake": 6_000}})
     with pytest.raises(CrashError, match="1.01x"):
         t.start({1: {"stake": 1_000, "auto": 1.0}})
     t.start({1: {"stake": 1_000, "auto": 5}}, now=0)
@@ -103,9 +110,19 @@ def test_success_table_is_proportional_to_rtp():
             assert math.isclose(row["성공 확률"] * x, rtp)
 
 
-def test_default_rtp_is_50_percent():
+def test_default_rtp_is_50_percent_with_rare_big_wins():
     t = CrashTable(SessionWallet({}, initial=100_000))
     assert t.rtp == 0.50
-    xs = samples(100_000, t.rtp)
-    instant = sum(x == 1.00 for x in xs) / len(xs)
-    assert instant == pytest.approx(1 - 0.50 / 1.01, abs=0.01)   # 약 50%는 뜨자마자 추락
+    xs = samples(200_000, t.rtp)
+    n = len(xs)
+    assert sum(x == 1.00 for x in xs) / n == pytest.approx(1 - 0.50 / 1.01, abs=0.01)  # 약 50%는 뜨자마자 추락
+    assert sum(x >= 10 for x in xs) / n == pytest.approx(0.05, abs=0.003)             # 10배 이상도 5%는 나온다
+    assert sum(x >= 100 for x in xs) / n == pytest.approx(0.005, abs=0.001)           # 100배 이상 0.5%
+
+
+def test_cash_out_keeps_two_decimals_exactly():
+    t = CrashTable(SessionWallet({}, initial=100_000))
+    t.start({1: {"stake": 10_000}}, now=0)
+    t.crash = 5.00
+    assert t.cash_out(1, 2.05, now=time_at(2.1)) == 20_500   # 2.04로 깎이지 않는다
+    assert t.bets[1].cashed_at == 2.05
