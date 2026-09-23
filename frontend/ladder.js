@@ -1,14 +1,15 @@
 // 사다리 게임 화면 (Streamlit Custom Component v2). common.js 뒤에 이어 붙는다.
-// - 파이썬(ladder/game.py)이 회차 시간표·추첨·정산을 한다. 결과는 추첨 시각이 지난 뒤에만 계산된다.
-// - JS → 파이썬: setTriggerValue("bet" | "tick")
-//   bet: 이번 회차에 칩 확정 / tick: 추첨 시각이 되면 결과를 받아 온다
-// - 시계는 서버 시각(data.view.now)에 맞춰 보정한다.
+// - 파이썬(ladder/game.py)이 추첨·정산을 한다. 결과는 베팅이 확정된 뒤에 서버에서 계산된다.
+// - JS → 파이썬: setTriggerValue("play", {bets}) — 칩을 놓고 추첨하기를 누르면 바로 추첨
+// - 새 결과가 오면 사다리 연출 → 결과·내 정산 표시. 연출이 끝나기 전에는 결과가 반영된 숫자를 보여 주지 않는다.
 
 const STATE = new WeakMap();
+// 배치(ladder.css): 가운데 홀·짝 크게, 그 아래 좌·우·3줄·4줄, 왼쪽에 좌 조합, 오른쪽에 우 조합
 const SPOTS = [
+  ["L3E", "좌3짝", "combo"], ["L4O", "좌4홀", "combo"],
+  ["odd", "홀", "odd"], ["even", "짝", "even"],
   ["left", "좌", "left"], ["right", "우", "right"], ["three", "3줄", "three"], ["four", "4줄", "four"],
-  ["odd", "홀", "odd"], ["even", "짝", "even"], null,
-  ["L3E", "좌3짝", "combo"], ["L4O", "좌4홀", "combo"], ["R3O", "우3홀", "combo"], ["R4E", "우4짝", "combo"],
+  ["R3O", "우3홀", "combo"], ["R4E", "우4짝", "combo"],
 ];
 const WIN_RULE = {
   left: (r) => r.side === "L", right: (r) => r.side === "R",
@@ -16,8 +17,19 @@ const WIN_RULE = {
   odd: (r) => r.finish === "odd", even: (r) => r.finish === "even",
   L3E: (r) => r.code === "L3E", L4O: (r) => r.code === "L4O", R3O: (r) => r.code === "R3O", R4E: (r) => r.code === "R4E",
 };
+// 양방 베팅 금지 (ladder/game.py 의 hedge_error 와 같은 규칙)
+const OPPOSITE = [["left", "right"], ["three", "four"], ["odd", "even"]];
+const OUTCOMES = [["L", 3, "even", "L3E"], ["L", 4, "odd", "L4O"], ["R", 3, "odd", "R3O"], ["R", 4, "even", "R4E"]]
+  .map(([side, lines, finish, code]) => ({ side, lines, finish, code }));
+const SPOT_NAME = Object.fromEntries(SPOTS.map(([k, n]) => [k, n]));
+function hedgeError(keys) {
+  const set = new Set(keys);
+  for (const [a, b] of OPPOSITE) if (set.has(a) && set.has(b)) return `${SPOT_NAME[a]}·${SPOT_NAME[b]} 양방 베팅은 할 수 없습니다.`;
+  if (set.size && OUTCOMES.every((o) => [...set].some((k) => WIN_RULE[k](o)))) return "어떤 결과가 나와도 맞는 조합(양방 베팅)은 걸 수 없습니다.";
+  return null;
+}
 const COLORS = { left: "#3b82f6", right: "#f97316", odd: "#2563eb", even: "#e11d48" };
-const RING = 276.46; // 2πr (r = 44)
+const RESULT_FALLBACK_MS = 5000; // 창이 가려져 그리기가 멈춰도 이 시간이 지나면 결과를 보여 준다
 
 export default function (component) {
   const { data, parentElement, setTriggerValue } = component;
@@ -30,10 +42,9 @@ export default function (component) {
     s = createState(root, data);
     if (prev) {
       prev.alive = false;
-      clearInterval(prev.clock);
       Object.assign(s, { bets: prev.bets, placed: prev.placed, lastBets: prev.lastBets, chip: prev.chip });
     }
-    // JS가 새로 불러와지면(개발 중 파일 수정 등) 이전 버전의 시계·그리기 루프를 확실히 멈춘다
+    // JS가 새로 불러와지면(개발 중 파일 수정 등) 이전 버전의 그리기 루프를 확실히 멈춘다
     const old = window.__ladderState;
     if (old && old !== s) {
       old.alive = false;
@@ -44,7 +55,6 @@ export default function (component) {
     buildSpots(s);
     bind(s);
     bindKeys(s, (code) => onKey(s, code));
-    s.clock = setInterval(() => tickClock(s), 200);
     requestAnimationFrame((t) => frame(s, t));
   }
   s.data = data;
@@ -60,15 +70,14 @@ function createState(root, data) {
   root.querySelectorAll("[data-act]").forEach((el) => (actions[el.dataset.act] = el));
   return {
     root, els, actions, alive: true,
-    bets: {},              // 아직 확정 안 한 칩 {key: amount}
+    bets: {},              // 판 위에 놓은 칩 {key: amount}
     placed: [],            // 되돌리기용 [[key, amount]]
-    lastBets: null,        // 지난번 확정한 베팅 (재베팅용)
+    lastBets: null,        // 지난 베팅 (재베팅용)
+    pendingBets: null,     // 추첨을 요청한 베팅 (응답 전까지 판에 보여 줌)
     chip: data.chips.includes(10000) ? 10000 : data.chips[0],
-    offset: 0,             // 서버 시각 - 내 시각
     sending: false,
     shownRound: data.view.last ? data.view.last.round : null,  // 첫 마운트 때는 지난 결과를 연출하지 않는다
-    anim: null,            // 추첨 연출 {res, t0}
-    tickFor: null,         // 결과를 요청한 회차
+    anim: null,            // 추첨 연출 {res, my, t0, shown}
     lastErrorId: data.error ? data.error.id : null,
     lastRecent: null,
     confetti: [],
@@ -76,22 +85,22 @@ function createState(root, data) {
   };
 }
 
-const serverNow = (s) => Date.now() / 1000 + s.offset;
 const betTotal = (bets) => Object.values(bets).reduce((a, b) => a + b, 0);
+const animating = (s) => !!(s.anim && !s.anim.shown);
+const busy = (s) => s.sending || animating(s);
+const winAmount = (s, key, amount) => Math.floor(amount * s.data.view.payouts[key]);
+// 이 베팅으로 받을 수 있는 가장 큰 금액 (4가지 결과 중)
+const maxWin = (s, bets) =>
+  Math.max(0, ...OUTCOMES.map((o) => Object.entries(bets).reduce((t, [k, v]) => t + (WIN_RULE[k](o) ? winAmount(s, k, v) : 0), 0)));
 
 // ── 베팅 칸 ─────────────────────────────────────────────────────────
 function buildSpots(s) {
   const box = s.els.bets;
   box.innerHTML = "";
   s.spots = {};
-  SPOTS.forEach((sp) => {
-    if (!sp) {
-      box.insertAdjacentHTML("beforeend", `<span class="gap"></span>`);
-      return;
-    }
-    const [key, name, cls] = sp;
+  SPOTS.forEach(([key, name, cls]) => {
     const btn = document.createElement("button");
-    btn.className = `ld-spot ${cls}`;
+    btn.className = `ld-spot ${cls} k-${key}`;
     btn.innerHTML = `<span class="name">${name}</span><span class="odds"></span><span class="mine"></span>`;
     btn.onclick = () => placeChip(s, key);
     box.appendChild(btn);
@@ -115,41 +124,58 @@ function bind(s) {
   };
   a.rebet.onclick = () => {
     if (!s.lastBets) return toast(s, "지난 베팅이 없습니다.");
-    if (locked(s)) return toast(s, "베팅이 마감되었습니다.");
+    if (busy(s)) return;
     const add = s.lastBets;
     if (betTotal(s.bets) + betTotal(add) > s.data.balance) return toast(s, "칩이 부족합니다.");
+    const hedge = hedgeError([...Object.keys(s.bets), ...Object.keys(add)]);
+    if (hedge) return toast(s, hedge);
     Object.entries(add).forEach(([k, v]) => {
       s.bets[k] = (s.bets[k] || 0) + v;
       s.placed.push([k, v]);
     });
+    clearWins(s);
     render(s);
   };
-  a.confirm.onclick = () => confirmBets(s);
-}
-
-function locked(s) {
-  return serverNow(s) >= s.data.view.lock_at;
+  a.confirm.onclick = () => play(s);
 }
 
 function placeChip(s, key) {
-  if (locked(s)) return toast(s, "베팅이 마감되었습니다. 다음 회차를 기다려 주세요.");
+  if (busy(s)) return;
   if (betTotal(s.bets) + s.chip > s.data.balance) return toast(s, "칩이 부족합니다.");
-  const mine = (s.data.view.mine[key] || 0) + (s.bets[key] || 0);
-  if (mine + s.chip > s.data.rules.max) return toast(s, `한 칸에 최대 ${fmt(s.data.rules.max)}까지 걸 수 있습니다.`);
+  const hedge = hedgeError([...Object.keys(s.bets), key]);
+  if (hedge) return toast(s, hedge);
+  if ((s.bets[key] || 0) + s.chip > s.data.rules.max) return toast(s, `한 칸에 최대 ${fmt(s.data.rules.max)}까지 걸 수 있습니다.`);
   s.bets[key] = (s.bets[key] || 0) + s.chip;
   s.placed.push([key, s.chip]);
+  clearWins(s);
   render(s);
 }
 
-function confirmBets(s) {
-  if (s.sending || !betTotal(s.bets)) return;
-  if (locked(s)) return toast(s, "베팅이 마감되었습니다.");
+// 칩이 없으면 지난 베팅 그대로 추첨한다
+function play(s) {
+  if (busy(s)) return;
+  let bets = s.bets;
+  if (!betTotal(bets)) {
+    if (!s.lastBets) return toast(s, "베팅 칸에 칩을 놓아 주세요.");
+    if (betTotal(s.lastBets) > s.data.balance) return toast(s, "칩이 부족합니다.");
+    bets = { ...s.lastBets };
+  }
   s.sending = true;
-  s.lastBets = { ...s.bets };
-  s.trigger("bet", { bets: { ...s.bets }, round: s.data.view.round, nonce: Date.now() });
+  s.lastBets = { ...bets };
+  s.pendingBets = { ...bets };
+  s.trigger("play", { bets: { ...bets }, nonce: Date.now() });
   s.bets = {};
   s.placed = [];
+  clearWins(s);
+  s.els.result.innerHTML = `<span class="sub">#${s.data.view.round}회차</span><span class="big wait">추첨 중…</span>`;
   render(s);
+  clearTimeout(s.sendGuard);
+  s.sendGuard = setTimeout(() => {
+    if (s.sending) {
+      s.sending = false;
+      render(s);
+    }
+  }, 8000);
 }
 
 function onKey(s, code) {
@@ -157,7 +183,7 @@ function onKey(s, code) {
   const click = (btn) => (btn.click(), true);
   switch (code) {
     case "Space":
-    case "Enter": confirmBets(s); return true;
+    case "Enter": play(s); return true;
     case "KeyZ":
     case "Backspace": return click(s.actions.undo);
     case "KeyC": return click(s.actions.clear);
@@ -166,132 +192,152 @@ function onKey(s, code) {
   return false;
 }
 
+function clearWins(s) {
+  Object.values(s.spots).forEach((b) => b.classList.remove("won"));
+}
+
 // ── 파이썬 → 화면 ───────────────────────────────────────────────────
 function sync(s) {
   const d = s.data;
   const v = d.view;
-  s.offset = v.now - Date.now() / 1000;
-  s.sending = false;
   buildChipTray(s);
 
   if (d.error && d.error.id !== s.lastErrorId) {
     s.lastErrorId = d.error.id;
     toast(s, d.error.msg);
+    if (s.sending) {
+      // 베팅이 거절됨: 칩을 판에 돌려놓는다
+      s.sending = false;
+      s.bets = s.pendingBets || {};
+      s.placed = Object.entries(s.bets);
+      showResult(s);
+    }
   }
   // 새 추첨 결과가 왔으면 연출
   if (v.last && v.last.round !== s.shownRound) {
     s.shownRound = v.last.round;
-    const anim = { res: v.last, t0: performance.now(), won: false };
+    s.sending = false;
+    clearTimeout(s.sendGuard);
+    const my = d.my_last && d.my_last.round === v.last.round ? d.my_last : null;
+    const anim = { res: v.last, my, t0: performance.now(), won: false, shown: false };
     s.anim = anim;
-    s.els.result.innerHTML = `<span class="sub">#${v.last.round}회차 추첨 중…</span>`;
-    // 창이 가려져 그리기가 멈춰도 연출 시간이 지나면 결과를 보여 준다
+    s.els.result.innerHTML = `<span class="sub">#${v.last.round}회차</span><span class="big wait">추첨 중…</span>`;
     setTimeout(() => {
       if (s.anim === anim && !anim.shown) {
         anim.shown = true;
         showResult(s);
       }
-    }, 8000);
-  } else if (!s.anim && v.last) {
-    s.anim = { res: v.last, t0: -1e9, won: true }; // 연출 없이 지난 결과만 (색종이도 없이)
+    }, RESULT_FALLBACK_MS);
+  } else if (!s.anim) {
+    const last = v.last;
+    s.anim = last ? { res: last, my: d.my_last && d.my_last.round === last.round ? d.my_last : null,
+                      t0: -1e9, won: true, shown: true } : null;
     showResult(s);
   }
   render(s);
+  if (!animating(s)) renderAfterResult(s);
+  renderFair(s, v);
+}
+
+// 결과가 공개된 뒤에 바뀌어야 하는 것들 (연출 중에 미리 보이면 결과를 알게 되므로)
+function renderAfterResult(s) {
+  const v = s.data.view;
   renderRecent(s, v);
   renderStats(s, v.stats);
   renderRoad(s, v.finishes);
-  renderFair(s, v);
+  renderMine(s, s.data.my);
 }
 
 function render(s) {
   const v = s.data.view;
-  const isLocked = locked(s);
+  const isBusy = busy(s);
+  const shownBets = s.sending && s.pendingBets ? s.pendingBets : animating(s) ? s.pendingBets || {} : s.bets;
   Object.entries(s.spots).forEach(([key, btn]) => {
     btn.querySelector(".odds").textContent = `${v.payouts[key].toFixed(2)}배`;
-    const confirmed = v.mine[key] || 0;
-    btn.querySelector(".mine").textContent = confirmed ? `확정 ${short(confirmed)}` : "";
+    const amount = shownBets[key] || 0;
+    btn.querySelector(".mine").textContent = amount ? `맞으면 ${fmt(winAmount(s, key, amount))}` : "";
     btn.querySelector(".stack")?.remove();
-    if (s.bets[key]) {
-      const chip = makeChip(s.bets[key], short(s.bets[key]), true);
+    if (amount) {
+      const chip = makeChip(amount, short(amount), true);
       chip.classList.add("stack");
       btn.appendChild(chip);
     }
-    btn.disabled = isLocked;
+    btn.disabled = isBusy;
   });
   const pending = betTotal(s.bets);
-  s.actions.confirm.disabled = !pending || isLocked || s.sending;
-  s.actions.confirm.firstChild.textContent = pending ? `베팅 확정 ${fmt(pending)} ` : "베팅 확정 ";
-  s.actions.undo.disabled = !s.placed.length;
-  s.actions.clear.disabled = !pending;
-  s.actions.rebet.disabled = !s.lastBets || isLocked;
-  const confirmedTotal = betTotal(v.mine);
-  s.els.totalbet.textContent = fmt(confirmedTotal + pending);
-  const bal = s.data.balance - pending;
-  s.els.balance.textContent = fmt(bal);
-  const profit = s.data.balance - s.data.start_chips;
+  const label = s.actions.confirm.querySelector("span");
+  s.actions.confirm.disabled = isBusy || (!pending && !s.lastBets);
+  label.textContent = isBusy ? "추첨 중…" : pending ? `추첨하기 ${fmt(pending)}` : s.lastBets ? `같은 베팅 추첨 ${fmt(betTotal(s.lastBets))}` : "추첨하기";
+  s.actions.undo.disabled = isBusy || !s.placed.length;
+  s.actions.clear.disabled = isBusy || !pending;
+  s.actions.rebet.disabled = isBusy || !s.lastBets;
+
+  // 이번 베팅 요약: 합계 · 가장 크게 받을 수 있는 금액
+  const shownTotal = betTotal(shownBets);
+  s.els.betinfo.innerHTML = shownTotal
+    ? `<span>이번 베팅 <b>${fmt(shownTotal)}</b></span><span>최대 당첨 <b class="plus">${fmt(maxWin(s, shownBets))}</b></span>`
+    : `<span class="hint">칸을 눌러 칩을 놓고 <b>추첨하기</b>(Space)</span>`;
+
+  // 연출이 끝나기 전에는 당첨금을 빼고(베팅액만 빠진) 잔액을 보여 준다
+  const hidden = animating(s) && s.anim.my ? s.anim.my : null;
+  const balance = s.data.balance - (hidden ? hidden.returned : 0);
+  const staked = s.sending && s.pendingBets ? betTotal(s.pendingBets) : 0;
+  s.els.totalbet.textContent = fmt(shownTotal);
+  s.els.balance.textContent = fmt(balance - pending - staked);
+  const profit = balance - s.data.start_chips;
   s.els.profit.textContent = profit > 0 ? `+${fmt(profit)}` : fmt(profit);
   s.els.profit.className = profit > 0 ? "up" : profit < 0 ? "down" : "";
   updateChipTray(s);
 }
 
-// 0.2초마다: 남은 시간, 마감, 추첨 요청
-function tickClock(s) {
-  if (!s.alive || !s.root.isConnected) return clearInterval(s.clock);
-  const v = s.data.view;
-  const now = serverNow(s);
-  const left = v.draw_at - now;
-  const toLock = v.lock_at - now;
-  const ring = s.els.ring;
-  let phase;
-  if (toLock > 0) {
-    phase = "베팅 중";
-    ring.setAttribute("class", "bar");
-    ring.style.strokeDashoffset = RING * (1 - toLock / (v.period - (v.draw_at - v.lock_at)));
-  } else if (left > 0) {
-    phase = "베팅 마감";
-    ring.setAttribute("class", "bar lock");
-    ring.style.strokeDashoffset = RING * (1 - left / (v.draw_at - v.lock_at));
-    if (betTotal(s.bets)) {
-      s.bets = {};
-      s.placed = [];
-      toast(s, "마감되어 확정하지 않은 칩은 돌려놓았습니다.");
-    }
-  } else {
-    phase = "추첨 중";
-    ring.setAttribute("class", "bar draw");
-    ring.style.strokeDashoffset = 0;
-    // 추첨 시각이 지났으면 결과를 요청. 내 시계가 서버보다 빨라 아직 추첨 전이었으면 2초 뒤 다시 요청
-    if (left < -0.2 && (s.tickFor !== v.round || Date.now() - s.tickAt > 2000)) {
-      s.tickFor = v.round;
-      s.tickAt = Date.now();
-      s.trigger("tick", { round: v.round, nonce: Date.now() });
-    }
-  }
-  s.els.round.textContent = `${v.round}회차`;
-  s.els.count.textContent = toLock > 0 ? Math.ceil(toLock) : left > 0 ? Math.ceil(left) : "…";
-  s.els.phase.textContent = phase;
-  const wasLocked = s.wasLocked;
-  s.wasLocked = toLock <= 0;
-  if (wasLocked !== s.wasLocked) render(s);
-}
-
 // ── 결과 / 기록 표시 ────────────────────────────────────────────────
 function showResult(s) {
   const a = s.anim;
-  if (!a) return;
+  if (!a) {
+    s.els.result.innerHTML = `<span class="sub">#${s.data.view.round}회차</span><span class="big wait">베팅하고 추첨</span>`;
+    return;
+  }
   const r = a.res;
-  const my = s.data.my_last && s.data.my_last.round === r.round ? s.data.my_last : null;
+  const my = a.my;
   const sideName = r.side === "L" ? "좌" : "우";
   const finName = r.finish === "odd" ? "홀" : "짝";
   s.els.result.innerHTML =
     `<span class="sub">#${r.round}회차 결과</span>` +
     `<span class="big" style="color:${COLORS[r.finish]}">${r.text}</span>` +
     `<span class="sub">${sideName} 출발 · ${r.lines}줄 · ${finName}</span>` +
-    (my ? `<span class="net ${my.net > 0 ? "plus" : my.net < 0 ? "minus" : ""}">내 수익 ${my.net > 0 ? "+" : ""}${fmt(my.net)}</span>` : "");
+    (my
+      ? `<span class="settle"><span>베팅 ${fmt(my.stake)} → 받음 ${fmt(my.returned)}</span>` +
+        `<b class="net ${my.net > 0 ? "plus" : my.net < 0 ? "minus" : ""}">${my.net > 0 ? "+" : ""}${fmt(my.net)}</b></span>`
+      : "");
   Object.entries(s.spots).forEach(([key, btn]) => btn.classList.toggle("won", WIN_RULE[key](r)));
   if (my && my.net > 0 && !a.won) {
     a.won = true;
     burstConfetti(s);
   }
+  s.pendingBets = null;
+  render(s);
+  renderAfterResult(s);
+}
+
+// 사다리 누적 손익 + 내 회차 기록
+function renderMine(s, my) {
+  if (!my) return;
+  const cls = (n) => (n > 0 ? "plus" : n < 0 ? "minus" : "");
+  s.els.mystats.innerHTML =
+    `<span class="t">사다리 누적 손익</span>` +
+    `<b class="total ${cls(my.net)}">${signed(my.net)}</b>` +
+    `<span class="row"><span>회차</span><b>${my.rounds}</b></span>` +
+    `<span class="row"><span>이긴 회차</span><b>${my.wins}${my.rounds ? ` (${Math.round((my.wins / my.rounds) * 100)}%)` : ""}</b></span>` +
+    `<span class="row"><span>총 베팅</span><b>${fmt(my.stake)}</b></span>` +
+    `<span class="row"><span>총 받음</span><b>${fmt(my.returned)}</b></span>`;
+  s.els.mylist.innerHTML = my.list.length
+    ? `<table><thead><tr><th>회차</th><th>결과</th><th>베팅</th><th>베팅액</th><th>받음</th><th>손익</th></tr></thead><tbody>` +
+      my.list.map((h) =>
+        `<tr><td>#${h.round}</td><td><b class="code ${h.code.endsWith("O") ? "odd" : "even"}">${h.result}</b></td>` +
+        `<td class="bets">${h.bets}</td><td>${fmt(h.stake)}</td><td>${fmt(h.returned)}</td>` +
+        `<td class="${cls(h.net)}">${signed(h.net)}</td></tr>`).join("") +
+      `</tbody></table>`
+    : `<p class="empty">아직 건 회차가 없습니다.</p>`;
 }
 
 function renderRecent(s, v) {
@@ -354,7 +400,7 @@ function renderRoad(s, finishes) {
 function renderFair(s, v) {
   const last = v.last;
   s.els.fair.textContent = `#${v.round}회차 해시 ${v.commit.slice(0, 16)}…` +
-    (last ? `  ·  지난 #${last.round}회차 시드 ${last.seed.slice(0, 12)}… 공개` : "");
+    (last && !animating(s) ? `  ·  지난 #${last.round}회차 시드 ${last.seed.slice(0, 12)}… 공개` : "");
 }
 
 // ── 칩 트레이 ───────────────────────────────────────────────────────
@@ -386,7 +432,7 @@ function updateChipTray(s) {
 
 // ── canvas: 사다리 그리기 ───────────────────────────────────────────
 // 연출 시간표 (초): 가림막 걷힘 0~0.6 → 가로줄 하나씩 0.6~ → 공 이동 → 도착
-const T_COVER = 0.6, T_RUNG = 0.3, SPEED = 0.55; // SPEED: 초당 이동 (사다리 높이 기준 비율)
+const T_COVER = 0.4, T_RUNG = 0.18, TRAVEL = 1.6; // TRAVEL: 공이 끝까지 가는 시간(초, 화면 크기와 무관). 전체 연출 약 3초
 
 function frame(s, now) {
   if (!s.alive || !s.root.isConnected) return;
@@ -445,7 +491,7 @@ function frame(s, now) {
     const lens = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]));
     const total = lens.reduce((q, w) => q + w, 0);
     const startMove = T_COVER + res.lines * T_RUNG + 0.2;
-    const moved = drawing ? Math.max(0, (t - startMove) * SPEED * (bot - top)) : total;
+    const moved = drawing ? Math.max(0, ((t - startMove) / TRAVEL) * total) : total;
     pathDone = moved >= total;
     // 지나간 길 칠하기
     let left = Math.min(moved, total);

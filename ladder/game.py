@@ -1,12 +1,11 @@
-"""사다리 게임 엔진 (베팅형, 자동 회차).
+"""사다리 게임 엔진 (베팅형, 버튼으로 바로 추첨).
 
 - 회차마다 출발(좌/우)과 가로줄 수(3/4)를 각각 1/2 확률로 뽑는다. 도착은 이 둘로 정해진다.
     좌3 → 짝, 좌4 → 홀, 우3 → 홀, 우4 → 짝   (아래 왼쪽 칸이 홀, 오른쪽 칸이 짝)
-- 배당 = 환수율 ÷ 맞힐 확률 (단일 1/2, 조합 1/4). 베팅할 때의 배당으로 정산한다.
-- 자동 회차: 서버 시계로 period 초마다 추첨. 추첨 lock 초 전부터는 베팅 마감.
-  결과는 추첨 시각이 지난 뒤에만 계산하므로 화면(브라우저)에서도 미리 알 수 없다.
-- 공정성 검증: 회차 시드 = HMAC(비밀 마스터 키, 회차 번호). 회차 전에 SHA-256 해시를 보여 주고,
-  추첨 후 회차 시드를 공개한다. 결과 = HMAC(회차 시드, "사용자 시드:회차 번호") 의 첫 바이트.
+- 배당 = 환수율 ÷ 맞힐 확률 (단일 1/2, 조합 1/4).
+- 진행: 베팅을 받은 뒤 서버가 바로 추첨·정산한다 (베팅이 확정된 뒤에 계산하므로 미리 알 수 없다).
+- 공정성 검증: 회차마다 서버 시드를 새로 만들어 추첨 전에 SHA-256 해시를 보여 주고, 추첨 후 시드를 공개한다.
+  결과 = HMAC-SHA256(서버 시드, "사용자 시드:회차 번호") 의 첫 바이트.
 """
 from __future__ import annotations
 
@@ -14,7 +13,6 @@ import hashlib
 import hmac
 import math
 import secrets
-import time
 from dataclasses import dataclass, field
 
 from wallet import Wallet
@@ -35,8 +33,9 @@ BETS = {
     "R3O": ("우3홀", lambda r: r["code"] == "R3O", 0.25),
     "R4E": ("우4짝", lambda r: r["code"] == "R4E", 0.25),
 }
+# 양방 베팅 금지: 정반대 쌍, 그리고 어떤 결과가 나와도 하나는 맞는 조합
+OPPOSITE = (("left", "right"), ("three", "four"), ("odd", "even"))
 HISTORY_KEEP = 200      # 결과 기록은 최근 200회차까지만
-CATCH_UP_LIMIT = 200    # 오래 비웠다 돌아오면 최근 회차만 계산
 
 
 def finish_of(side: str, lines: int) -> str:
@@ -71,6 +70,25 @@ def draw(round_seed: str, client_seed: str, round_no: int) -> dict:
             "text": f"{SIDE_TEXT[side]}{lines}{FINISH_TEXT[finish]}"}
 
 
+# 나올 수 있는 결과 4가지 (좌3 · 좌4 · 우3 · 우4)
+OUTCOMES = [
+    {"side": side, "lines": lines, "finish": finish_of(side, lines),
+     "code": f"{side}{lines}{'O' if finish_of(side, lines) == 'odd' else 'E'}"}
+    for side in ("L", "R") for lines in (3, 4)
+]
+
+
+def hedge_error(keys) -> str | None:
+    """양방 베팅이면 안내 문구, 아니면 None. keys = 한 회차에 건 베팅 종류 전부."""
+    keys = set(keys)
+    for a, b in OPPOSITE:
+        if a in keys and b in keys:
+            return f"{BETS[a][0]}·{BETS[b][0]} 양방 베팅은 할 수 없습니다."
+    if keys and all(any(BETS[k][1](o) for k in keys) for o in OUTCOMES):
+        return "어떤 결과가 나와도 맞는 조합(양방 베팅)은 걸 수 없습니다."
+    return None
+
+
 class LadderError(ValueError):
     pass
 
@@ -79,107 +97,57 @@ class LadderError(ValueError):
 class LadderTable:
     wallet: Wallet
     rtp: float = 0.95
-    period: int = 60          # 회차 간격(초)
-    lock: int = 10            # 추첨 몇 초 전에 베팅 마감
     min_bet: int = 1_000
     max_bet: int = 1_000_000
     client_seed: str = field(default_factory=lambda: secrets.token_hex(8))
-    epoch: float = field(default_factory=time.time)
-    base: int = 0             # 간격을 바꿔도 회차 번호가 이어지도록 더하는 값
-    results: list[dict] = field(default_factory=list)   # 추첨이 끝난 회차 (오래된 것부터)
-    pending: dict[int, list[dict]] = field(default_factory=dict)  # 회차 → [{key, amount, odds}]
+    round: int = 0            # 마지막으로 추첨한 회차 번호
+    results: list[dict] = field(default_factory=list)   # 추첨한 회차 (오래된 것부터)
 
     def __post_init__(self):
-        self._master = secrets.token_hex(32)  # 비밀 마스터 키 (공개하지 않는다)
-        self.resolved_upto = self.round_at(self.epoch) - 1
+        self._next_seed()
 
-    # ── 시간표 ──────────────────────────────────────────────────────
-    def round_at(self, t: float) -> int:
-        """t 시각에 베팅을 받고 있는(아직 추첨 전인) 회차 번호."""
-        return self.base + int((t - self.epoch) // self.period) + 1
-
-    def draw_time(self, k: int) -> float:
-        return self.epoch + (k - self.base) * self.period
-
-    def lock_time(self, k: int) -> float:
-        return self.draw_time(k) - self.lock
-
-    def round_seed(self, k: int) -> str:
-        return hmac.new(self._master.encode(), f"round:{k}".encode(), hashlib.sha256).hexdigest()
-
-    def commit(self, k: int) -> str:
-        return seed_hash(self.round_seed(k))
+    def _next_seed(self) -> None:
+        self.server_seed = secrets.token_hex(32)
+        self.commit = seed_hash(self.server_seed)  # 추첨 전에 공개하는 약속값
 
     # ── 설정 ────────────────────────────────────────────────────────
     def payouts(self) -> dict[str, float]:
         return {key: odds_for(self.rtp, prob) for key, (_, _, prob) in BETS.items()}
 
-    def set_period(self, period: int, now: float | None = None) -> None:
-        now = time.time() if now is None else now
-        if period == self.period:
-            return
-        if any(self.pending.values()):
-            raise LadderError("걸어 둔 베팅이 정산된 뒤에 간격을 바꿀 수 있습니다.")
-        self.resolve(now)
-        current = self.round_at(now)
-        self.period = period
-        self.epoch = now
-        self.base = current - 1   # 지금 회차 번호를 그대로 두고, 추첨은 now + period 로
-
     def set_client_seed(self, seed: str) -> None:
         seed = seed.strip()
         if not seed:
             raise LadderError("시드를 입력하세요.")
-        if any(self.pending.values()):
-            raise LadderError("걸어 둔 베팅이 정산된 뒤에 시드를 바꿀 수 있습니다.")
         self.client_seed = seed
 
-    # ── 베팅 ────────────────────────────────────────────────────────
-    def place(self, bets: dict[str, int], now: float | None = None) -> int:
-        """지금 베팅을 받는 회차에 건다. 돌려주는 값은 회차 번호."""
-        now = time.time() if now is None else now
-        k = self.round_at(now)
-        if now >= self.lock_time(k):
-            raise LadderError(f"{k}회차는 베팅이 마감되었습니다. 다음 회차에 걸어 주세요.")
+    # ── 베팅 → 추첨 → 정산 ──────────────────────────────────────────
+    def play(self, bets: dict[str, int]) -> dict:
+        """베팅을 받고 바로 추첨해 정산한다. 돌려주는 값은 기록(ledger 형식)."""
         clean = {key: int(v) for key, v in bets.items() if int(v or 0) > 0}
         if not clean:
             raise LadderError("베팅이 없습니다.")
         for key, v in clean.items():
             if key not in BETS:
                 raise LadderError("없는 베팅입니다.")
-            already = sum(b["amount"] for b in self.pending.get(k, []) if b["key"] == key)
-            if not self.min_bet <= v or already + v > self.max_bet:
+            if not self.min_bet <= v <= self.max_bet:
                 raise LadderError(f"{BETS[key][0]}: 베팅은 {self.min_bet:,} ~ {self.max_bet:,} 사이여야 합니다.")
+        msg = hedge_error(clean)
+        if msg:
+            raise LadderError(msg)
         total = sum(clean.values())
         if total > self.wallet.balance:
             raise LadderError(f"칩이 부족합니다. (베팅 {total:,} / 보유 {self.wallet.balance:,})")
-        self.wallet.debit(total)
-        odds = self.payouts()
-        self.pending.setdefault(k, []).extend({"key": key, "amount": v, "odds": odds[key]} for key, v in clean.items())
-        return k
 
-    # ── 추첨 / 정산 ─────────────────────────────────────────────────
-    def resolve(self, now: float | None = None) -> list[dict]:
-        """추첨 시각이 지난 회차를 모두 추첨하고, 걸린 베팅을 정산한다. 정산한 회차 기록을 돌려준다."""
-        now = time.time() if now is None else now
-        last_done = self.round_at(now) - 1          # 추첨 시각이 지난 마지막 회차
-        if last_done <= self.resolved_upto:
-            return []
-        start = max(self.resolved_upto + 1, last_done - CATCH_UP_LIMIT + 1)
-        todo = set(range(start, last_done + 1)) | {k for k in self.pending if k <= last_done}
-        settled = []
-        for k in sorted(todo):
-            seed = self.round_seed(k)
-            res = {"round": k, **draw(seed, self.client_seed, k), "seed": seed, "commit": seed_hash(seed),
-                   "client_seed": self.client_seed, "draw_at": self.draw_time(k)}
-            if k >= start:
-                self.results.append(res)
-            bets = self.pending.pop(k, None)
-            if bets:
-                settled.append(self._settle(res, bets))
+        self.wallet.debit(total)
+        self.round += 1
+        k = self.round
+        res = {"round": k, **draw(self.server_seed, self.client_seed, k), "seed": self.server_seed,
+               "commit": self.commit, "client_seed": self.client_seed}
+        self.results.append(res)
         self.results = self.results[-HISTORY_KEEP:]
-        self.resolved_upto = last_done
-        return settled
+        self._next_seed()
+        odds = self.payouts()
+        return self._settle(res, [{"key": key, "amount": v, "odds": odds[key]} for key, v in clean.items()])
 
     def _settle(self, res: dict, bets: list[dict]) -> dict:
         settlements = []
@@ -218,26 +186,14 @@ class LadderTable:
             "odd": count(lambda r: r["finish"] == "odd") / total,
         }
 
-    def to_view(self, now: float | None = None) -> dict:
-        now = time.time() if now is None else now
-        k = self.round_at(now)
-        mine = {}
-        for b in self.pending.get(k, []):
-            mine[b["key"]] = mine.get(b["key"], 0) + b["amount"]
-        last = self.results[-1] if self.results else None
+    def to_view(self) -> dict:
         return {
-            "now": now,
-            "round": k,
-            "draw_at": self.draw_time(k),
-            "lock_at": self.lock_time(k),
-            "period": self.period,
-            "commit": self.commit(k),
+            "round": self.round + 1,   # 다음에 추첨할 회차
+            "commit": self.commit,
             "client_seed": self.client_seed,
             "rtp": self.rtp,
             "payouts": self.payouts(),
-            "mine": mine,   # 이번 회차에 확정한 베팅
-            "waiting": {str(r): sum(b["amount"] for b in bs) for r, bs in self.pending.items() if r != k},
-            "last": last,
+            "last": self.results[-1] if self.results else None,
             "recent": [{"round": r["round"], "text": r["text"], "code": r["code"], "finish": r["finish"]}
                        for r in self.results[-20:]][::-1],
             "finishes": [r["finish"] for r in self.results[-120:]],

@@ -5,11 +5,8 @@ import pytest
 from ladder.game import BETS, LadderError, LadderTable, draw, finish_of, odds_for, seed_hash
 from wallet import SessionWallet
 
-T0 = 1_000_000.0  # 테스트용 기준 시각
-
-
 def table(balance=1_000_000, **kw):
-    return LadderTable(SessionWallet({}, initial=balance), epoch=T0, **kw)
+    return LadderTable(SessionWallet({}, initial=balance), **kw)
 
 
 def test_finish_rule():
@@ -41,80 +38,61 @@ def test_payouts_follow_rtp():
     assert t.payouts()["left"] == 1.90 and t.payouts()["R4E"] == 3.80
 
 
-def test_schedule_lock_and_settlement():
+def test_play_settles_immediately():
     t = table()
-    assert t.round_at(T0) == 1 and t.draw_time(1) == T0 + 60 and t.lock_time(1) == T0 + 50
-    k = t.place({"left": 10_000, "odd": 5_000, "L4O": 1_000}, now=T0 + 10)
-    assert k == 1 and t.wallet.balance == 1_000_000 - 16_000
-    with pytest.raises(LadderError, match="마감"):
-        t.place({"right": 1_000}, now=T0 + 55)
-    assert t.resolve(now=T0 + 59) == []          # 아직 추첨 전
-    [rec] = t.resolve(now=T0 + 60.1)
+    commit, seed = t.commit, t.server_seed
+    rec = t.play({"left": 10_000, "odd": 5_000, "L4O": 1_000})
     res = t.results[-1]
+    assert res["round"] == 1 == rec["round_no"] and t.round == 1
+    assert res["code"] == draw(seed, t.client_seed, 1)["code"]
     expected = sum(
         int(amount * odds) if BETS[key][1](res) else 0
         for key, amount, odds in (("left", 10_000, 1.9), ("odd", 5_000, 1.9), ("L4O", 1_000, 3.8))
     )
     assert rec["total_returned"] == expected
     assert t.wallet.balance == 1_000_000 - 16_000 + expected
-    assert rec["game"] == "ladder" and rec["round_no"] == 1 and rec["result"] == res["text"]
+    assert rec["game"] == "ladder" and rec["result"] == res["text"]
     assert sum(s["stake"] for s in rec["settlements"]) == rec["total_stake"] == 16_000
+    assert rec["fair"]["commit"] == commit == seed_hash(rec["fair"]["seed"])
+    assert t.commit != commit   # 다음 회차는 새 시드
 
 
-def test_odds_are_fixed_when_the_bet_is_placed():
-    t = table(rtp=0.95)
-    t.place({"left": 10_000}, now=T0 + 1)
-    t.rtp = 0.80   # 베팅한 뒤에 환수율을 바꿔도
-    [rec] = t.resolve(now=T0 + 61)
-    assert rec["settlements"][0]["detail"] == "1.90x"
-
-
-def test_catch_up_after_being_away():
-    t = table()
-    t.place({"even": 2_000}, now=T0 + 5)
-    recs = t.resolve(now=T0 + 60 * 1000)   # 1000회차 뒤에 돌아옴
-    assert len(recs) == 1 and recs[0]["round_no"] == 1   # 걸어 둔 베팅은 정산된다
-    assert len(t.results) <= 200
-    assert t.results[-1]["round"] == 1000
-    assert t.resolve(now=T0 + 60 * 1000 + 1) == []
-
-
-def test_provably_fair_commit_and_reveal():
-    t = table()
-    commit = t.commit(1)                     # 회차 전에 보여 주는 해시
-    t.resolve(now=T0 + 61)
-    res = t.results[-1]
-    assert res["round"] == 1 and seed_hash(res["seed"]) == commit == res["commit"]
-    assert draw(res["seed"], res["client_seed"], 1)["code"] == res["code"]
-
-
-def test_period_change_keeps_round_numbers():
-    t = table()
-    t.place({"left": 1_000}, now=T0 + 5)
-    with pytest.raises(LadderError, match="정산된 뒤"):
-        t.set_period(30, now=T0 + 6)
-    t.resolve(now=T0 + 61)
-    t.set_period(30, now=T0 + 70)            # 지금은 2회차가 열려 있다
-    assert t.round_at(T0 + 70) == 2 and t.draw_time(2) == T0 + 100
-    assert t.round_at(T0 + 101) == 3
+def test_accounting_over_many_rounds():
+    t = table(balance=10_000_000)
+    net = sum(t.play({"left": 2_000, "odd": 1_000})["net"] for _ in range(300))
+    assert t.wallet.balance == 10_000_000 + net
+    assert t.round == 300 and len(t.results) == 200
+    v = t.to_view()
+    assert v["round"] == 301 and len(v["recent"]) == 20 and len(v["finishes"]) == 120
 
 
 def test_validation():
     t = table(balance=5_000)
     with pytest.raises(LadderError, match="칩이 부족"):
-        t.place({"left": 3_000, "right": 3_000}, now=T0)
+        t.play({"left": 3_000, "odd": 3_000})
     with pytest.raises(LadderError, match="없는 베팅"):
-        t.place({"middle": 1_000}, now=T0)
+        t.play({"middle": 1_000})
     with pytest.raises(LadderError, match="베팅은"):
-        t.place({"left": 500}, now=T0)
-    assert t.wallet.balance == 5_000
+        t.play({"left": 500})
+    with pytest.raises(LadderError, match="베팅이 없습니다"):
+        t.play({})
+    assert t.wallet.balance == 5_000 and t.round == 0
 
 
-def test_view():
+def test_no_hedge_bets():
+    from ladder.game import hedge_error
+
+    assert hedge_error({"left", "right"}) and hedge_error({"three", "four"}) and hedge_error({"odd", "even"})
+    assert hedge_error({"L3E", "L4O", "R3O", "R4E"})          # 4조합 전부
+    assert hedge_error({"odd", "L3E", "R4E"})                 # 홀 + 짝이 되는 조합 전부
+    assert hedge_error({"left", "R3O", "R4E"})                # 좌 + 우 조합 전부
+    assert hedge_error({"left", "odd", "three"}) is None
+    assert hedge_error({"L3E", "R3O"}) is None
+
     t = table()
-    t.place({"odd": 3_000}, now=T0 + 1)
-    t.place({"odd": 2_000}, now=T0 + 2)
-    v = t.to_view(now=T0 + 3)
-    assert v["round"] == 1 and v["mine"] == {"odd": 5_000}
-    assert v["draw_at"] == T0 + 60 and v["commit"] == t.commit(1)
-    assert v["last"] is None
+    with pytest.raises(LadderError, match="양방"):
+        t.play({"left": 1_000, "right": 1_000})
+    with pytest.raises(LadderError, match="양방"):
+        t.play({"left": 1_000, "R3O": 1_000, "R4E": 1_000})
+    assert t.wallet.balance == 1_000_000 and t.round == 0
+    t.play({"left": 1_000, "odd": 1_000})

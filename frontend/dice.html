@@ -1,0 +1,40 @@
+<div class="bt-root dc">
+  <section class="dc-stage" data-el="stage">
+    <header class="bt-top dc-top">
+      <div class="bt-kv"><span>보유 칩</span><b data-el="balance">0</b></div>
+      <div class="bt-kv"><span>손익</span><b data-el="profit">0</b></div>
+      <div class="bt-kv right"><span>이번 판 베팅</span><b data-el="totalbet">0</b></div>
+    </header>
+    <div class="dc-recent" data-el="recent"></div>
+
+    <div class="dc-body">
+      <div class="dc-result" data-el="result"></div>
+      <div class="dc-bowl-wrap" data-el="wrap">
+        <div class="dc-plate" data-el="plate">
+          <div class="dc-dice" data-el="dice"></div>
+        </div>
+      </div>
+      <div class="dc-stats" data-el="stats"></div>
+    </div>
+    <div class="dc-fair" data-el="fair"></div>
+  </section>
+
+  <section class="bt-controls dc-controls">
+    <div class="dc-board" data-el="board"></div>
+    <div class="dc-bottom">
+      <div class="bt-chiptray" data-el="chiptray"></div>
+      <div class="bt-actions">
+        <button data-act="undo">되돌리기 <kbd>Z</kbd></button>
+        <button data-act="clear">전부 취소 <kbd>C</kbd></button>
+        <button data-act="rebet">재베팅 <kbd>R</kbd></button>
+        <button data-act="roll" class="dc-roll"><span>굴리기</span> <kbd>Space</kbd></button>
+      </div>
+    </div>
+  </section>
+
+  <section class="dc-roadbox">
+    <div class="dc-road-title">홀·짝 기록 (최근 120판) <span class="o">● 홀</span> <span class="e">● 짝</span> <span class="t">● 트리플</span></div>
+    <div class="dc-road" data-el="road"></div>
+  </section>
+  <div class="bt-toast" data-el="toast"></div>
+</div>

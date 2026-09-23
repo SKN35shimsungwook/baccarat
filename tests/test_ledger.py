@@ -91,14 +91,12 @@ def test_crash_records():
 def test_ladder_records():
     from ladder.game import LadderTable
 
-    t = LadderTable(SessionWallet({}, initial=1_000_000), epoch=0.0)
-    for k in range(1, 6):
-        t.place({"left": 10_000, "odd": 5_000, "R4E": 1_000}, now=(k - 1) * 60 + 1)
-    history = [{**rec, "no": i + 1, "time": "00:00:00", "shoe": "사다리"}
-               for i, rec in enumerate(t.resolve(now=5 * 60 + 1))]
+    t = LadderTable(SessionWallet({}, initial=1_000_000))
+    history = [{**t.play({"left": 10_000, "odd": 5_000, "R3O": 1_000}), "no": i + 1, "time": "00:00:00",
+                "shoe": "사다리"} for i in range(5)]
     assert len(history) == 5
     per = {r["bet"]: r for r in by_bet(history)}
-    assert set(per) == {"사다리 좌", "사다리 홀", "사다리 우4짝"}
+    assert set(per) == {"사다리 좌", "사다리 홀", "사다리 우3홀"}
     assert sum(r["net"] for r in per.values()) == summarize(history)["net"] == t.wallet.balance - 1_000_000
     top = rows(history)[0]
     assert top["게임"] == "사다리" and top["슈"] == "#5" and "적중" in top["결과"]
